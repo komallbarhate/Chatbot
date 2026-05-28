@@ -134,6 +134,8 @@ let conversationHistory = [];
 let userLocationStr     = "";
 let activeSessionTokens = 0;
 let currentUserEmail    = null; // active logged-in email, or "guest"
+const DEMO_TOKEN_LIMIT  = 1500;
+let totalTokensUsed     = parseInt(localStorage.getItem("novamind_total_tokens_used") || "0", 10);
 
 // ── Session Storage ───────────────────────────────────────────────────────────
 const MAX_SESSIONS = 60;
@@ -746,6 +748,14 @@ async function sendMessage() {
   if (!text && !hasFile) return;
   if (isWaiting) return;
 
+  if (totalTokensUsed >= DEMO_TOKEN_LIMIT) {
+    const actionMsg = currentUserEmail === "guest"
+      ? "Please register or contact the administrator to continue chatting."
+      : "Please contact the administrator to continue chatting.";
+    alert(`Demo quota exhausted (${DEMO_TOKEN_LIMIT} tokens used).\n\n${actionMsg}`);
+    return;
+  }
+
   // On-demand location detection based on keywords
   const locationKeywords = [
     "weather", "temperature", "forecast", "rain", "near me", "nearby", 
@@ -814,6 +824,8 @@ async function sendMessage() {
     
     if (tokensMeta && tokensMeta.totalTokenCount) {
       activeSessionTokens += tokensMeta.totalTokenCount;
+      totalTokensUsed += tokensMeta.totalTokenCount;
+      localStorage.setItem("novamind_total_tokens_used", totalTokensUsed.toString());
       updateQuotaUI();
     }
   } catch (err) {
@@ -1496,6 +1508,7 @@ function updateQuotaUI() {
   const rpmEl = document.getElementById("quota-rpm");
   const rpdEl = document.getElementById("quota-rpd");
   const tokEl = document.getElementById("quota-tokens");
+  const headerEl = document.getElementById("quota-header-title");
   
   const now = Date.now();
   const originalLen = requestTimestamps.length;
@@ -1518,6 +1531,10 @@ function updateQuotaUI() {
   
   if (tokEl) {
     tokEl.textContent = formatTokenCount(activeSessionTokens);
+  }
+
+  if (headerEl) {
+    headerEl.textContent = `Demo Quota: ${totalTokensUsed}/${DEMO_TOKEN_LIMIT} used`;
   }
 }
 
