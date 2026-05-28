@@ -1,4 +1,4 @@
-const CACHE_NAME = 'novamind-cache-v2';
+const CACHE_NAME = 'novamind-cache-v3';
 const ASSETS = [
   './',
   './index.html',

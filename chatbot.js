@@ -578,26 +578,64 @@ async function callGemini(text, imagePart = null) {
     ],
   };
 
-  const activeKey = getActiveAPIKey();
-  const endpoint = `${BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${activeKey}`;
-  const t0  = performance.now();
-  const res = await fetch(endpoint, {
-    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
-  });
+  let attempts = 0;
+  const maxAttempts = Math.min(5, getNumKeys());
+  let lastError = null;
+  const keysTried = new Set();
 
-  if (!res.ok) {
-    const err = await res.json().catch(()=>({}));
-    throw new Error(err?.error?.message || `HTTP ${res.status}`);
+  while (attempts < maxAttempts) {
+    let activeKey = "";
+    const availableKeys = (typeof GEMINI_API_KEYS !== "undefined" && Array.isArray(GEMINI_API_KEYS))
+      ? GEMINI_API_KEYS.filter(k => !keysTried.has(k))
+      : [];
+      
+    if (availableKeys.length > 0) {
+      activeKey = availableKeys[Math.floor(Math.random() * availableKeys.length)];
+    } else {
+      activeKey = typeof GEMINI_API_KEY !== "undefined" ? GEMINI_API_KEY : "";
+    }
+    
+    keysTried.add(activeKey);
+    attempts++;
+
+    const endpoint = `${BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${activeKey}`;
+    const t0  = performance.now();
+    
+    try {
+      const res = await fetch(endpoint, {
+        method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(()=>({}));
+        const msg = err?.error?.message || `HTTP ${res.status}`;
+        
+        if ((res.status === 429 || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("limit")) && attempts < maxAttempts) {
+          console.warn(`Key rate-limited. Retrying with a different key... (Attempt ${attempts}/${maxAttempts})`);
+          continue;
+        }
+        throw new Error(msg);
+      }
+
+      const data      = await res.json();
+      const latencyMs = Math.round(performance.now() - t0);
+      const replyText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const tokensMeta= data?.usageMetadata || {};
+
+      conversationHistory.push({ role: "model", parts: [{ text: replyText }] });
+
+      return { replyText, latencyMs, tokensMeta };
+    } catch (err) {
+      lastError = err;
+      if ((err.message.toLowerCase().includes("quota") || err.message.toLowerCase().includes("limit") || err.message.toLowerCase().includes("429")) && attempts < maxAttempts) {
+        console.warn(`Fetch error: ${err.message}. Retrying with another key...`);
+        continue;
+      }
+      throw err;
+    }
   }
-
-  const data      = await res.json();
-  const latencyMs = Math.round(performance.now() - t0);
-  const replyText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  const tokensMeta= data?.usageMetadata || {};
-
-  conversationHistory.push({ role: "model", parts: [{ text: replyText }] });
-
-  return { replyText, latencyMs, tokensMeta };
+  
+  throw lastError || new Error("Failed to reach Gemini API after multiple key attempts.");
 }
 
 // ── Markdown ──────────────────────────────────────────────────────────────────
