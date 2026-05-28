@@ -41,6 +41,7 @@ const incognitoBanner     = document.getElementById("incognito-banner");
 const incognitoHeaderBtn  = document.getElementById("incognito-header-btn");
 const incognitoSidebarBtn = document.getElementById("incognito-sidebar-btn");
 const attachBtn           = document.getElementById("attach-btn");
+const micBtn              = document.getElementById("mic-btn");
 const fileInputEl         = document.getElementById("file-input");
 const filePreviewArea     = document.getElementById("file-preview-area");
 const fileChipNameEl      = document.getElementById("file-chip-name");
@@ -57,6 +58,7 @@ let isIncognito         = false;
 let attachedFile        = null;   // { name, type, mimeType, data, previewSrc }
 let currentSessionId    = null;
 let conversationHistory = [];
+let userLocationStr     = "";
 
 // ── Session Storage ───────────────────────────────────────────────────────────
 const SESSIONS_KEY = "novamind_sessions";
@@ -430,7 +432,7 @@ async function callGemini(text, imagePart = null) {
   conversationHistory.push({ role: "user", parts });
 
   const body = {
-    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    system_instruction: { parts: [{ text: SYSTEM_PROMPT + userLocationStr }] },
     contents: conversationHistory,
     generationConfig: { temperature: 0.8, topK: 40, topP: 0.95, maxOutputTokens: 1024 },
     safetySettings: [
@@ -759,6 +761,74 @@ if (inputAreaInner) {
   });
 }
 
+// ── Geolocation ───────────────────────────────────────────────────────────────
+function requestLocation() {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        userLocationStr = `\n\nUser's current location: Latitude ${pos.coords.latitude}, Longitude ${pos.coords.longitude}.`;
+      },
+      err => console.warn("Location access denied or failed", err)
+    );
+  }
+}
+
+// ── Speech Recognition ────────────────────────────────────────────────────────
+let isListening = false;
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition();
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  
+  recognition.onstart = () => {
+    isListening = true;
+    if (micBtn) micBtn.classList.add("listening");
+    inputEl.placeholder = "Listening...";
+  };
+  
+  recognition.onresult = (event) => {
+    let transcript = "";
+    for (let i = 0; i < event.results.length; i++) {
+      transcript += event.results[i][0].transcript;
+    }
+    inputEl.value = transcript;
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+    sendBtn.disabled = !inputEl.value.trim() && !attachedFile;
+  };
+  
+  recognition.onend = () => {
+    isListening = false;
+    if (micBtn) micBtn.classList.remove("listening");
+    inputEl.placeholder = "Ask NovaMind anything…";
+  };
+  
+  recognition.onerror = (event) => {
+    console.error("Speech recognition error", event.error);
+    isListening = false;
+    if (micBtn) micBtn.classList.remove("listening");
+    inputEl.placeholder = "Ask NovaMind anything…";
+  };
+}
+
+if (micBtn) {
+  micBtn.addEventListener("click", () => {
+    if (!recognition) {
+      alert("Speech recognition is not supported in this browser.");
+      return;
+    }
+    if (isListening) {
+      recognition.stop();
+    } else {
+      inputEl.value = "";
+      recognition.start();
+    }
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener("load", async () => {
   inputEl.focus();
@@ -779,4 +849,7 @@ window.addEventListener("load", async () => {
   sendBtn.disabled    = true;
 
   if (ok) console.log(`🚀 NovaMind ready — model: ${GEMINI_MODEL}`);
+
+  // Request location seamlessly
+  requestLocation();
 });

@@ -549,14 +549,25 @@ body {
 }
 .file-chip-remove:hover { background: rgba(239,68,68,0.15); color: #f87171; }
 
-/* Attach button */
-.attach-btn {
+/* Attach & Mic buttons */
+.attach-btn, .mic-btn {
   width: 32px; height: 32px; background: transparent; border: none;
   border-radius: var(--radius-sm); color: var(--text-muted);
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; transition: var(--transition);
 }
-.attach-btn:hover { color: var(--text-primary); background: var(--bg-active); }
+.attach-btn:hover, .mic-btn:hover { color: var(--text-primary); background: var(--bg-active); }
+
+/* Mic active listening animation */
+.mic-btn.listening {
+  color: #ef4444; background: rgba(239, 68, 68, 0.1);
+  animation: pulse-mic 1.5s infinite;
+}
+@keyframes pulse-mic {
+  0%   { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  70%  { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
 
 /* Input wrapper */
 .input-wrapper {
