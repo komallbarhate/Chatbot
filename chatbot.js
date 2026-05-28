@@ -12,6 +12,13 @@ const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 let GEMINI_MODEL    = null;
 let GEMINI_ENDPOINT = null;
 
+function getActiveAPIKey() {
+  if (typeof GEMINI_API_KEYS !== "undefined" && Array.isArray(GEMINI_API_KEYS) && GEMINI_API_KEYS.length > 0) {
+    return GEMINI_API_KEYS[Math.floor(Math.random() * GEMINI_API_KEYS.length)];
+  }
+  return typeof GEMINI_API_KEY !== "undefined" ? GEMINI_API_KEY : "";
+}
+
 const PERSONA_PROMPTS = {
   default: `You are NovaMind, a helpful, friendly, and knowledgeable AI assistant.
 - Be concise but thorough. Use a warm, conversational tone.
@@ -505,7 +512,8 @@ async function discoverModel() {
     if (mlStatusText) mlStatusText.textContent = "Connecting…";
     if (mlDot) { mlDot.className = ""; mlDot.classList.add("ml-dot","ml-dot--loading"); }
 
-    const res  = await fetch(`${BASE_URL}/models?key=${GEMINI_API_KEY}`);
+    const activeKey = getActiveAPIKey();
+    const res  = await fetch(`${BASE_URL}/models?key=${activeKey}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`);
 
@@ -523,7 +531,6 @@ async function discoverModel() {
     if (!models.length) throw new Error("No generateContent models found.");
 
     GEMINI_MODEL    = models[0];
-    GEMINI_ENDPOINT = `${BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
     updateModelLabel();
     if (mlDot) { mlDot.className = ""; mlDot.classList.add("ml-dot","ml-dot--ready"); }
@@ -563,8 +570,10 @@ async function callGemini(text, imagePart = null) {
     ],
   };
 
+  const activeKey = getActiveAPIKey();
+  const endpoint = `${BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${activeKey}`;
   const t0  = performance.now();
-  const res = await fetch(GEMINI_ENDPOINT, {
+  const res = await fetch(endpoint, {
     method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
   });
 
