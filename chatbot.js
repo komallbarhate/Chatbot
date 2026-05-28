@@ -739,6 +739,20 @@ async function sendMessage() {
   if (!text && !hasFile) return;
   if (isWaiting) return;
 
+  // On-demand location detection based on keywords
+  const locationKeywords = [
+    "weather", "temperature", "forecast", "rain", "near me", "nearby", 
+    "restaurant", "food", "cafe", "hotel", "store", "shop", "where am i", 
+    "my location", "current location", "directions", "map", "local news", 
+    "local time"
+  ];
+  const lowercaseText = text.toLowerCase();
+  const needsLocation = locationKeywords.some(kw => lowercaseText.includes(kw));
+
+  if (needsLocation && !userLocationStr) {
+    await requestLocation();
+  }
+
   // Ensure a session exists
   ensureSession();
 
@@ -910,14 +924,23 @@ if (inputAreaInner) {
 
 // ── Geolocation ───────────────────────────────────────────────────────────────
 function requestLocation() {
-  if (navigator.geolocation) {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve();
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       pos => {
         userLocationStr = `\n\nUser's current location: Latitude ${pos.coords.latitude}, Longitude ${pos.coords.longitude}.`;
+        resolve();
       },
-      err => console.warn("Location access denied or failed", err)
+      err => {
+        console.warn("Location access denied or failed", err);
+        resolve();
+      },
+      { timeout: 5000 }
     );
-  }
+  });
 }
 
 // ── Speech Recognition ────────────────────────────────────────────────────────
@@ -1261,7 +1284,4 @@ window.addEventListener("load", async () => {
   sendBtn.disabled    = true;
 
   if (ok) console.log(`🚀 NovaMind ready — model: ${GEMINI_MODEL}`);
-
-  // Request location seamlessly
-  requestLocation();
 });
