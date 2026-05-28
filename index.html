@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="NovaMind – An NLP-powered rule-based chatbot using Compromise.js for tokenization, lemmatization, POS tagging, entity extraction and sentiment analysis." />
+  <title>NovaMind – NLP Chatbot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Main App -->
+  <div class="app-container">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <div class="logo-icon">
+            <svg viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 4h3.5l6.5 9.5V4H17v14h-3.5L7 8.5V18H4V4z" fill="#000"/>
+            </svg>
+          </div>
+          <span class="logo-text">NovaMind</span>
+        </div>
+        <div class="online-badge">
+          <span class="pulse-dot"></span>
+          Online
+        </div>
+
+        <!-- New Chat button (Copilot style) -->
+        <button class="new-chat-btn" id="clear-btn" title="Start a new chat">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          New chat
+        </button>
+      </div>
+
+      <div class="sidebar-section">
+        <p class="section-label">Explore topics</p>
+        <div class="topic-chips">
+          <button class="chip" data-msg="Hello!" id="chip-hello">👋 Greetings</button>
+          <button class="chip" data-msg="What's the weather like?" id="chip-weather">🌤 Weather</button>
+          <button class="chip" data-msg="Tell me a joke" id="chip-joke">😂 Jokes</button>
+          <button class="chip" data-msg="What time is it?" id="chip-time">🕐 Time &amp; Date</button>
+          <button class="chip" data-msg="What can you do?" id="chip-help">🤖 Capabilities</button>
+          <button class="chip" data-msg="Give me a fun fact" id="chip-fact">💡 Fun Facts</button>
+          <button class="chip" data-msg="How are you?" id="chip-howru">😊 Mood Check</button>
+          <button class="chip" data-msg="Tell me a quote" id="chip-quote">✨ Quotes</button>
+          <button class="chip" data-msg="What is AI?" id="chip-ai">🧠 About AI</button>
+          <button class="chip" data-msg="Bye!" id="chip-bye">👋 Goodbye</button>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="stats-row">
+          <div class="stat-card">
+            <span class="stat-value" id="msg-count">0</span>
+            <span class="stat-label">Messages</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" id="session-time">00:00</span>
+            <span class="stat-label">Session</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Chat Area -->
+    <main class="chat-area">
+
+      <!-- Chat Header -->
+      <header class="chat-header">
+        <div class="bot-info">
+          <div class="bot-avatar-header">
+            <span>N</span>
+            <span class="status-ring"></span>
+          </div>
+          <div>
+            <h1 class="bot-name">NovaMind</h1>
+            <p class="bot-status" id="bot-status-text"></p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <div class="ml-status-badge" id="ml-status-badge" style="display:none">
+            <span class="ml-dot ml-dot--loading" id="ml-dot"></span>
+            <span id="ml-status-text"></span>
+          </div>
+          <button class="icon-btn nlp-view-btn active" id="nlp-view-toggle" title="Toggle Info Panels">⬡</button>
+          <button class="icon-btn" id="theme-toggle" title="Toggle Theme">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Messages Container -->
+      <div class="messages-container" id="messages">
+
+        <!-- Copilot-style hero/greeting (shown before any message) -->
+        <div class="copilot-hero" id="copilot-hero">
+          <div class="copilot-hero-icon">N</div>
+          <h2 class="copilot-hero-title">Hi, I'm NovaMind</h2>
+          <p class="copilot-hero-sub">Your AI assistant. Ask me anything.</p>
+        </div>
+
+        <!-- Suggestion cards (Copilot style, hidden after first message) -->
+        <div class="suggestion-cards" id="suggestion-cards">
+          <button class="suggestion-card" data-msg="Tell me a joke" id="sug-joke">
+            <span class="suggestion-icon">😂</span>Tell me a joke
+          </button>
+          <button class="suggestion-card" data-msg="Give me a fun fact" id="sug-fact">
+            <span class="suggestion-icon">💡</span>Give me a fun fact
+          </button>
+          <button class="suggestion-card" data-msg="What is AI?" id="sug-ai">
+            <span class="suggestion-icon">🧠</span>What is AI?
+          </button>
+          <button class="suggestion-card" data-msg="What can you do?" id="sug-help">
+            <span class="suggestion-icon">🤖</span>What can you do?
+          </button>
+        </div>
+
+        <!-- Welcome message (hidden by default, shown by JS) -->
+        <div class="message bot-message" id="welcome-msg" style="display:none">
+          <div class="avatar bot-avatar">N</div>
+          <div class="bubble-wrapper">
+            <div class="bubble bot-bubble">
+              <p>Hey there! 👋 I'm <strong>NovaMind</strong>, powered by <strong>ML + NLP</strong> with zero lag!</p>
+              <p style="margin-top:8px">🦥 <strong>ML Engine:</strong> <em>TF-IDF + Cosine Similarity</em> — the same technique used in search engines &amp; spam filters. It runs instantly in-browser with no downloads.</p>
+              <p style="margin-top:8px">🧠 <strong>NLP Engine:</strong> <em>Compromise.js</em> — for tokenization, POS tagging, NER &amp; sentiment analysis.</p>
+              <p style="margin-top:8px">Every reply shows a live <strong>ML Analysis panel</strong> with cosine similarity scores across all intents. ✨</p>
+            </div>
+            <span class="timestamp">Just now</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Typing Indicator (hidden) -->
+      <div class="typing-indicator" id="typing-indicator">
+        <div class="avatar bot-avatar">N</div>
+        <div class="typing-dots">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <!-- Input Area -->
+      <div class="input-area">
+        <div class="input-area-inner">
+          <div class="input-wrapper">
+            <textarea
+              id="user-input"
+              placeholder="Ask NovaMind anything…"
+              rows="1"
+              autocomplete="off"
+              spellcheck="true"
+            ></textarea>
+            <button class="send-btn" id="send-btn" disabled>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22,2 15,22 11,13 2,9"/>
+              </svg>
+            </button>
+          </div>
+          <p class="input-hint">Press <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line</p>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="chatbot.js"></script>
+
+  <!-- Hide hero & suggestions after first user message -->
+  <script>
+    (function () {
+      const hero = document.getElementById('copilot-hero');
+      const suggestions = document.getElementById('suggestion-cards');
+
+      function hideIntro() {
+        if (hero) hero.style.display = 'none';
+        if (suggestions) suggestions.style.display = 'none';
+      }
+
+      // Wire suggestion cards to send messages
+      document.querySelectorAll('.suggestion-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const msg = card.dataset.msg;
+          const input = document.getElementById('user-input');
+          if (input && msg) {
+            input.value = msg;
+            input.dispatchEvent(new Event('input'));
+            document.getElementById('send-btn').click();
+            hideIntro();
+          }
+        });
+      });
+
+      // Hide after first send
+      const sendBtn = document.getElementById('send-btn');
+      const textarea = document.getElementById('user-input');
+
+      function onSend() { hideIntro(); }
+      if (sendBtn) sendBtn.addEventListener('click', onSend);
+      if (textarea) {
+        textarea.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && !e.shiftKey) onSend();
+        });
+      }
+
+      // Theme toggle: switch to dark class instead of light
+      const themeBtn = document.getElementById('theme-toggle');
+      if (themeBtn) {
+        themeBtn.addEventListener('click', () => {
+          document.body.classList.toggle('dark');
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
