@@ -1,7 +1,9 @@
-# Never commit sensitive files
+# API Key — never commit this
+config.js
+
+# Other sensitive files
 .env
 *.env
-config.local.js
 api_key.txt
 
 # OS files
