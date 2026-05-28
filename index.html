@@ -91,6 +91,25 @@
       </div>
 
       <div class="sidebar-footer">
+        <!-- API Usage & Quota Tracker -->
+        <div class="quota-container">
+          <p class="quota-header-title">Gemini Free Quota (Est.)</p>
+          <div class="quota-row">
+            <div class="quota-card" title="Requests per minute (Limit: 15)">
+              <span class="quota-val" id="quota-rpm">0/15</span>
+              <span class="quota-lbl">RPM</span>
+            </div>
+            <div class="quota-card" title="Requests per day (Limit: 1500)">
+              <span class="quota-val" id="quota-rpd">0/1.5k</span>
+              <span class="quota-lbl">RPD</span>
+            </div>
+            <div class="quota-card" title="Total tokens consumed in current conversation">
+              <span class="quota-val" id="quota-tokens">0</span>
+              <span class="quota-lbl">Chat Tok</span>
+            </div>
+          </div>
+        </div>
+
         <div class="stats-row">
           <div class="stat-card">
             <span class="stat-value" id="msg-count">0</span>

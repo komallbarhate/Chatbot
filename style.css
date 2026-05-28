@@ -780,6 +780,50 @@ kbd {
 }
 .share-link-input-wrapper button:hover { background: #e5e5e5; }
 
+/* Quota Tracker styles */
+.quota-container {
+  margin: 0 4px 12px 4px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+}
+.quota-header-title {
+  font-size: 0.63rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  margin: 0 0 6px 2px;
+}
+.quota-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.quota-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 4px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 42px;
+}
+.quota-val {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.quota-lbl {
+  font-size: 0.56rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-top: 1px;
+}
 
 /* ══════════════════════════════════════════════
    RESPONSIVE

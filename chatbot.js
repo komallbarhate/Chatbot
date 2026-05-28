@@ -132,6 +132,7 @@ let attachedFile        = null;   // { name, type, mimeType, data, previewSrc }
 let currentSessionId    = null;
 let conversationHistory = [];
 let userLocationStr     = "";
+let activeSessionTokens = 0;
 
 // ── Session Storage ───────────────────────────────────────────────────────────
 const SESSIONS_KEY = "novamind_sessions";
@@ -270,6 +271,15 @@ function loadSession(id) {
   messageCount        = 0;
   sessionStart        = Date.now();
 
+  // Reset & sum session tokens
+  activeSessionTokens = 0;
+  (s.displayMessages || []).forEach(m => {
+    if (m.sender === "bot" && m.tokensMeta && m.tokensMeta.totalTokenCount) {
+      activeSessionTokens += m.tokensMeta.totalTokenCount;
+    }
+  });
+  updateQuotaUI();
+
   // Clear messages
   messagesEl.querySelectorAll(".message").forEach(m => m.remove());
 
@@ -372,6 +382,8 @@ function startFreshChat() {
   sessionStart = Date.now();
   currentSessionId = null;
   clearAttachedFile();
+  activeSessionTokens = 0;
+  updateQuotaUI();
 
   const hero = document.getElementById("copilot-hero");
   const sug  = document.getElementById("suggestion-cards");
@@ -393,6 +405,8 @@ function toggleIncognito() {
     sessionStart = Date.now();
     currentSessionId = null;
     clearAttachedFile();
+    activeSessionTokens = 0;
+    updateQuotaUI();
     const hero = document.getElementById("copilot-hero");
     const sug  = document.getElementById("suggestion-cards");
     if (hero) hero.style.display = "";
@@ -764,10 +778,17 @@ async function sendMessage() {
   showTyping();
 
   try {
+    recordRequest();
     const { replyText, latencyMs, tokensMeta } = await callGemini(effectiveText, imagePart);
     hideTyping();
     renderMessage(replyText, "bot", { latencyMs, tokensMeta });
     persistMsg({ text: replyText, sender: "bot", timestamp: getTime(), latencyMs, tokensMeta });
+    
+    if (tokensMeta && tokensMeta.totalTokenCount) {
+      activeSessionTokens += tokensMeta.totalTokenCount;
+      updateQuotaUI();
+    }
+  }
   } catch (err) {
     hideTyping();
     conversationHistory.pop();
@@ -1115,12 +1136,74 @@ document.addEventListener("click", e => {
   }
 });
 
+// ── Quota & Token Tracker Logic ──────────────────────────────────────────────
+let dailyRequestCount = 0;
+let requestTimestamps = [];
+
+function initQuotaTracker() {
+  const todayStr = new Date().toDateString();
+  const storedDate = localStorage.getItem("novamind_quota_date");
+  
+  if (storedDate !== todayStr) {
+    localStorage.setItem("novamind_quota_date", todayStr);
+    localStorage.setItem("novamind_quota_rpd", "0");
+    dailyRequestCount = 0;
+  } else {
+    dailyRequestCount = parseInt(localStorage.getItem("novamind_quota_rpd") || "0", 10);
+  }
+  updateQuotaUI();
+}
+
+function recordRequest() {
+  const now = Date.now();
+  dailyRequestCount++;
+  localStorage.setItem("novamind_quota_rpd", dailyRequestCount.toString());
+  
+  requestTimestamps.push(now);
+  requestTimestamps = requestTimestamps.filter(ts => now - ts < 60000);
+  
+  updateQuotaUI();
+}
+
+function updateQuotaUI() {
+  const rpmEl = document.getElementById("quota-rpm");
+  const rpdEl = document.getElementById("quota-rpd");
+  const tokEl = document.getElementById("quota-tokens");
+  
+  const now = Date.now();
+  requestTimestamps = requestTimestamps.filter(ts => now - ts < 60000);
+  
+  if (rpmEl) {
+    rpmEl.textContent = `${requestTimestamps.length}/15`;
+  }
+  
+  if (rpdEl) {
+    rpdEl.textContent = `${dailyRequestCount}/1.5k`;
+  }
+  
+  if (tokEl) {
+    tokEl.textContent = formatTokenCount(activeSessionTokens);
+  }
+}
+
+function formatTokenCount(num) {
+  if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
+  if (num >= 1000) return (num / 1000).toFixed(1) + "k";
+  return num.toString();
+}
+
+// Periodically update the RPM UI so it decays back to 0
+setInterval(updateQuotaUI, 15000);
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener("load", async () => {
   inputEl.focus();
   inputEl.disabled = true;
   sendBtn.disabled = true;
   inputEl.placeholder = "Connecting to Gemini…";
+
+  // Initialize Quota tracker state
+  initQuotaTracker();
 
   // Render saved sessions
   renderSessions();
