@@ -12,15 +12,88 @@ const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 let GEMINI_MODEL    = null;
 let GEMINI_ENDPOINT = null;
 
-const SYSTEM_PROMPT = `You are NovaMind, a helpful, friendly, and knowledgeable AI assistant.
+const PERSONA_PROMPTS = {
+  default: `You are NovaMind, a helpful, friendly, and knowledgeable AI assistant.
 - Be concise but thorough. Use a warm, conversational tone.
 - Use markdown: **bold**, *italic*, bullet points, and code blocks when helpful.
 - For code, always specify the language in the code fence.
 - Keep responses focused and avoid unnecessary filler phrases.
 - If asked who you are, say you are NovaMind, powered by Google Gemini.
 - When a user shares an image, describe what you see and help with any related questions.
-- When a user shares a file's content, analyze it and assist accordingly.`;
+- When a user shares a file's content, analyze it and assist accordingly.`,
 
+  expert: `You are NovaMind, acting as an elite software engineering agent and coding expert.
+- Provide clean, highly optimized, and production-ready code snippets.
+- Use clear explanations of algorithms, design patterns, and complexity.
+- Focus strictly on technical correctness, best practices, and security.
+- Avoid unnecessary introductory chit-chat, and get straight to the code.
+- Format all code snippets using proper code blocks.`,
+
+  creative: `You are NovaMind, acting as a creative writer and storyteller.
+- Use vivid language, rich descriptions, and engaging prose.
+- Be expressive, poetic, and imaginative in your answers.
+- Help the user write stories, scripts, poems, brainstorm ideas, or write copy.
+- Feel free to use metaphors and creative comparisons.`,
+
+  sarcastic: `You are NovaMind, a highly intelligent but extremely sarcastic assistant.
+- Give helpful answers but dress them in witty banter, playful sass, and light sarcasm.
+- Use dry humor, ironies, and funny remarks, but keep it friendly and safe.
+- You can act slightly unimpressed or offer funny sighs, but ultimately answer the question correctly.`
+};
+
+const IMAGE_GEN_RULES = `
+- IMPORTANT (IMAGE GENERATION): If the user asks you to generate, create, draw, paint, or show an image or picture, you must output an image using the following exact Markdown format: ![Generated Image](https://image.pollinations.ai/prompt/{encoded_description})
+- Replace {encoded_description} with a descriptive, detailed, space-separated or plus-separated prompt describing the image in detail. DO NOT use brackets or curly braces in the final URL. Only output the image markdown without any extra text or conversational filler if they only asked for an image.
+- Example: If the user says "draw a cute kitten", you must output: ![Cute kitten](https://image.pollinations.ai/prompt/cute+kitten+highly+detailed+warm+lighting+soft+focus)`;
+
+let currentPersona = "default";
+let currentUtterance = null;
+let speakingButton = null;
+
+function toggleSpeak(text, btn) {
+  if (window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+    if (speakingButton) {
+      speakingButton.classList.remove("speaking");
+      speakingButton.title = "Read aloud";
+      speakingButton.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+    }
+    if (speakingButton === btn) {
+      speakingButton = null;
+      return;
+    }
+  }
+
+  // Remove markdown tags and code blocks
+  let cleanText = text.replace(/```[\s\S]*?```/g, "[code block omitted]");
+  cleanText = cleanText.replace(/<[^>]*>/g, "").replace(/\*|_|`/g, "");
+  
+  const utterance = new SpeechSynthesisUtterance(cleanText);
+  const voices = window.speechSynthesis.getVoices();
+  const voice = voices.find(v => v.lang.startsWith("en-") && v.name.includes("Google")) || voices.find(v => v.lang.startsWith("en-"));
+  if (voice) utterance.voice = voice;
+
+  utterance.onend = () => {
+    btn.classList.remove("speaking");
+    btn.title = "Read aloud";
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+    if (speakingButton === btn) speakingButton = null;
+  };
+
+  utterance.onerror = () => {
+    btn.classList.remove("speaking");
+    btn.title = "Read aloud";
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+    if (speakingButton === btn) speakingButton = null;
+  };
+
+  btn.classList.add("speaking");
+  btn.title = "Stop reading";
+  btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect></svg>`;
+  
+  speakingButton = btn;
+  window.speechSynthesis.speak(utterance);
+}
 // ── DOM References ────────────────────────────────────────────────────────────
 const messagesEl          = document.getElementById("messages");
 const inputEl             = document.getElementById("user-input");
@@ -257,9 +330,23 @@ function replayMsg(msg) {
     bw.appendChild(buildGeminiPanel(msg.latencyMs, msg.tokensMeta || {}, GEMINI_MODEL || ""));
   }
 
+  const footer = document.createElement("div");
+  footer.className = "message-footer";
+
   const ts = document.createElement("span");
   ts.className = "timestamp"; ts.textContent = msg.timestamp || "";
-  bw.appendChild(ts);
+  footer.appendChild(ts);
+
+  if (isBot && msg.text) {
+    const speakBtn = document.createElement("button");
+    speakBtn.className = "speak-btn";
+    speakBtn.title = "Read aloud";
+    speakBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+    speakBtn.addEventListener("click", () => toggleSpeak(msg.text, speakBtn));
+    footer.appendChild(speakBtn);
+  }
+
+  bw.appendChild(footer);
 
   if (isBot) { wrapper.appendChild(avatar); wrapper.appendChild(bw); }
   else        { wrapper.appendChild(bw); wrapper.appendChild(avatar); }
@@ -431,8 +518,11 @@ async function callGemini(text, imagePart = null) {
 
   conversationHistory.push({ role: "user", parts });
 
+  const selectedPersonaPrompt = PERSONA_PROMPTS[currentPersona] || PERSONA_PROMPTS.default;
+  const fullSystemInstruction = selectedPersonaPrompt + IMAGE_GEN_RULES + userLocationStr;
+
   const body = {
-    system_instruction: { parts: [{ text: SYSTEM_PROMPT + userLocationStr }] },
+    system_instruction: { parts: [{ text: fullSystemInstruction }] },
     contents: conversationHistory,
     generationConfig: { temperature: 0.8, topK: 40, topP: 0.95, maxOutputTokens: 1024 },
     safetySettings: [
@@ -467,10 +557,26 @@ async function callGemini(text, imagePart = null) {
 function markdownToHTML(text) {
   let html = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
-  html = html.replace(/```(\w+)?\n?([\s\S]*?)```/g, (_,lang,code) => {
-    const l = lang ? `<span class="code-lang">${lang}</span>` : "";
-    return `<div class="code-block">${l}<pre><code>${code.trim()}</code></pre></div>`;
+  // Handle markdown images: ![alt](url)
+  html = html.replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="bot-generated-img" loading="lazy" />');
+  
+  // Handle markdown links: [text](url)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="bot-link">$1</a>');
+
+  html = html.replace(/```(\w+)?\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const language = lang ? lang.trim() : "code";
+    return `<div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">${language}</span>
+        <button class="copy-code-btn" type="button" aria-label="Copy code">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="copy-icon"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span class="copy-text">Copy</span>
+        </button>
+      </div>
+      <pre><code>${code.trim()}</code></pre>
+    </div>`;
   });
+  
   html = html.replace(/`([^`]+)`/g, `<code class="inline-code">$1</code>`);
   html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/\*(.+?)\*/g,     "<em>$1</em>");
@@ -573,9 +679,23 @@ function renderMessage(text, sender, { latencyMs, tokensMeta, error, fileInfo } 
     else if (latencyMs !== undefined) bw.appendChild(buildGeminiPanel(latencyMs, tokensMeta || {}, GEMINI_MODEL));
   }
 
+  const footer = document.createElement("div");
+  footer.className = "message-footer";
+
   const ts = document.createElement("span");
   ts.className = "timestamp"; ts.textContent = getTime();
-  bw.appendChild(ts);
+  footer.appendChild(ts);
+
+  if (isBot && !error && text) {
+    const speakBtn = document.createElement("button");
+    speakBtn.className = "speak-btn";
+    speakBtn.title = "Read aloud";
+    speakBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+    speakBtn.addEventListener("click", () => toggleSpeak(text, speakBtn));
+    footer.appendChild(speakBtn);
+  }
+
+  bw.appendChild(footer);
 
   if (isBot) { wrapper.appendChild(avatar); wrapper.appendChild(bw); }
   else        { wrapper.appendChild(bw); wrapper.appendChild(avatar); }
@@ -829,6 +949,172 @@ if (micBtn) {
   });
 }
 
+// ── Persona Select Handling ──────────────────────────────────────────────────
+const personaSelect = document.getElementById("persona-select");
+if (personaSelect) {
+  currentPersona = personaSelect.value;
+  personaSelect.addEventListener("change", () => {
+    currentPersona = personaSelect.value;
+  });
+}
+
+// ── Share Chat Operations ────────────────────────────────────────────────────
+const shareModal = document.getElementById("share-modal");
+const shareModalClose = document.getElementById("share-modal-close");
+const shareChatBtn = document.getElementById("share-chat-btn");
+const shareLinkVal = document.getElementById("share-link-val");
+const shareLinkCopyBtn = document.getElementById("share-link-copy-btn");
+
+function getChatTranscript() {
+  let transcript = "NovaMind Chat Transcript\n=======================\n\n";
+  const messages = document.querySelectorAll(".message");
+  if (messages.length === 0) return "No messages to share.";
+  
+  messages.forEach(msg => {
+    const isBot = msg.classList.contains("bot-message");
+    const name = isBot ? "NovaMind" : "User";
+    
+    let text = "";
+    if (isBot) {
+      const bubble = msg.querySelector(".bot-bubble");
+      if (bubble) {
+        const clone = bubble.cloneNode(true);
+        const panel = clone.querySelector(".ml-panel");
+        if (panel) panel.remove();
+        text = clone.innerText;
+      }
+    } else {
+      const bubble = msg.querySelector(".user-bubble");
+      if (bubble) text = bubble.innerText;
+    }
+    
+    const ts = msg.querySelector(".timestamp")?.textContent || "";
+    if (text) {
+      transcript += `[${ts}] ${name}: ${text.trim()}\n\n`;
+    }
+  });
+  return transcript;
+}
+
+if (shareChatBtn) {
+  shareChatBtn.addEventListener("click", () => {
+    if (!shareModal) return;
+    if (shareLinkVal) {
+      shareLinkVal.value = window.location.href;
+    }
+    shareModal.classList.add("visible");
+    const nativeOpt = document.getElementById("native-share-option");
+    if (nativeOpt) {
+      nativeOpt.style.display = navigator.share ? "flex" : "none";
+    }
+  });
+}
+
+if (shareModalClose) {
+  shareModalClose.addEventListener("click", () => {
+    shareModal.classList.remove("visible");
+  });
+}
+
+if (shareModal) {
+  shareModal.addEventListener("click", (e) => {
+    if (e.target === shareModal) {
+      shareModal.classList.remove("visible");
+    }
+  });
+}
+
+if (shareLinkCopyBtn && shareLinkVal) {
+  shareLinkCopyBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(shareLinkVal.value).then(() => {
+      const originalText = shareLinkCopyBtn.textContent;
+      shareLinkCopyBtn.textContent = "Copied!";
+      setTimeout(() => {
+        shareLinkCopyBtn.textContent = originalText;
+      }, 2000);
+    });
+  });
+}
+
+document.querySelectorAll(".share-option").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const platform = btn.dataset.platform;
+    const url = window.location.href;
+    const transcript = getChatTranscript();
+    const shortText = `Check out my NovaMind AI chat transcript:\n\n${transcript.slice(0, 300)}...\n\nExplore NovaMind at: ${url}`;
+
+    switch (platform) {
+      case "whatsapp":
+        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(shortText)}`, "_blank");
+        break;
+      case "instagram":
+        navigator.clipboard.writeText(transcript).then(() => {
+          alert("Chat transcript copied to clipboard! Opening Instagram so you can paste & share in DMs/Stories.");
+          window.open("https://www.instagram.com/", "_blank");
+        });
+        break;
+      case "email":
+        window.open(`mailto:?subject=${encodeURIComponent("NovaMind Chat Transcript")}&body=${encodeURIComponent(transcript)}`, "_blank");
+        break;
+      case "link":
+        navigator.clipboard.writeText(url).then(() => {
+          const label = btn.querySelector(".share-label");
+          const originalText = label.textContent;
+          label.textContent = "Copied!";
+          setTimeout(() => { label.textContent = originalText; }, 2000);
+        });
+        break;
+      case "copytext":
+        navigator.clipboard.writeText(transcript).then(() => {
+          const label = btn.querySelector(".share-label");
+          const originalText = label.textContent;
+          label.textContent = "Copied!";
+          setTimeout(() => { label.textContent = originalText; }, 2000);
+        });
+        break;
+      case "native":
+        if (navigator.share) {
+          navigator.share({
+            title: "NovaMind Chat Transcript",
+            text: transcript.slice(0, 1000),
+            url: url
+          }).catch(console.error);
+        }
+        break;
+    }
+  });
+});
+
+// ── Copy Code Delegation ──────────────────────────────────────────────────────
+document.addEventListener("click", e => {
+  const btn = e.target.closest(".copy-code-btn");
+  if (btn) {
+    const codeBlock = btn.closest(".code-block");
+    if (codeBlock) {
+      const codeEl = codeBlock.querySelector("pre code");
+      if (codeEl) {
+        const textarea = document.createElement("textarea");
+        textarea.innerHTML = codeEl.innerHTML;
+        const textToCopy = textarea.value;
+        
+        navigator.clipboard.writeText(textToCopy).then(() => {
+          const textSpan = btn.querySelector(".copy-text");
+          const originalText = textSpan.textContent;
+          textSpan.textContent = "Copied!";
+          btn.classList.add("copied");
+          
+          setTimeout(() => {
+            textSpan.textContent = originalText;
+            btn.classList.remove("copied");
+          }, 2000);
+        }).catch(err => {
+          console.error("Clipboard copy failed:", err);
+        });
+      }
+    }
+  }
+});
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener("load", async () => {
   inputEl.focus();
@@ -841,6 +1127,13 @@ window.addEventListener("load", async () => {
   updateIncognitoUI();
   if (incognitoBanner) incognitoBanner.classList.remove("visible");
   if (filePreviewArea) filePreviewArea.style.display = "none";
+
+  // Register PWA Service Worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then(reg => console.log('Service Worker registered successfully!', reg.scope))
+      .catch(err => console.error('Service Worker registration failed:', err));
+  }
 
   const ok = await discoverModel();
 

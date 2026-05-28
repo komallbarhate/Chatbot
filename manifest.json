@@ -1,0 +1,17 @@
+{
+  "name": "NovaMind AI Chatbot",
+  "short_name": "NovaMind",
+  "description": "NovaMind – AI chatbot with conversation history, file sharing, incognito mode, location awareness, voice input, image generation, and read aloud voice.",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
