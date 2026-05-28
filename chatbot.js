@@ -267,6 +267,7 @@ function loadSession(id) {
   if (!s) return;
 
   currentSessionId    = id;
+  localStorage.setItem("novamind_last_session_id", id);
   conversationHistory = [...(s.history || [])];
   messageCount        = 0;
   sessionStart        = Date.now();
@@ -369,6 +370,10 @@ function replayMsg(msg) {
 // ── Delete Session ────────────────────────────────────────────────────────────
 function deleteSession(id) {
   removeSession(id);
+  const lastSessId = localStorage.getItem("novamind_last_session_id");
+  if (id === lastSessId) {
+    localStorage.removeItem("novamind_last_session_id");
+  }
   if (id === currentSessionId) startFreshChat();
   else renderSessions(searchInputEl ? searchInputEl.value : "");
 }
@@ -381,6 +386,7 @@ function startFreshChat() {
   msgCountEl.textContent = 0;
   sessionStart = Date.now();
   currentSessionId = null;
+  localStorage.removeItem("novamind_last_session_id");
   clearAttachedFile();
   activeSessionTokens = 0;
   updateQuotaUI();
@@ -404,6 +410,7 @@ function toggleIncognito() {
     msgCountEl.textContent = 0;
     sessionStart = Date.now();
     currentSessionId = null;
+    localStorage.removeItem("novamind_last_session_id");
     clearAttachedFile();
     activeSessionTokens = 0;
     updateQuotaUI();
@@ -1150,6 +1157,17 @@ function initQuotaTracker() {
   } else {
     dailyRequestCount = parseInt(localStorage.getItem("novamind_quota_rpd") || "0", 10);
   }
+
+  // Load RPM timestamps from sessionStorage so page refresh doesn't reset them
+  try {
+    const storedTimestamps = sessionStorage.getItem("novamind_quota_rpm_timestamps");
+    if (storedTimestamps) {
+      requestTimestamps = JSON.parse(storedTimestamps).map(Number);
+    }
+  } catch (e) {
+    requestTimestamps = [];
+  }
+
   updateQuotaUI();
 }
 
@@ -1160,6 +1178,11 @@ function recordRequest() {
   
   requestTimestamps.push(now);
   requestTimestamps = requestTimestamps.filter(ts => now - ts < 60000);
+
+  // Save RPM timestamps to sessionStorage
+  try {
+    sessionStorage.setItem("novamind_quota_rpm_timestamps", JSON.stringify(requestTimestamps));
+  } catch (e) {}
   
   updateQuotaUI();
 }
@@ -1170,7 +1193,15 @@ function updateQuotaUI() {
   const tokEl = document.getElementById("quota-tokens");
   
   const now = Date.now();
+  const originalLen = requestTimestamps.length;
   requestTimestamps = requestTimestamps.filter(ts => now - ts < 60000);
+
+  // If timestamps expired, update sessionStorage
+  if (requestTimestamps.length !== originalLen) {
+    try {
+      sessionStorage.setItem("novamind_quota_rpm_timestamps", JSON.stringify(requestTimestamps));
+    } catch (e) {}
+  }
   
   if (rpmEl) {
     rpmEl.textContent = `${requestTimestamps.length}/15`;
@@ -1209,6 +1240,12 @@ window.addEventListener("load", async () => {
   updateIncognitoUI();
   if (incognitoBanner) incognitoBanner.classList.remove("visible");
   if (filePreviewArea) filePreviewArea.style.display = "none";
+
+  // Load last active session if exists
+  const lastSessId = localStorage.getItem("novamind_last_session_id");
+  if (lastSessId) {
+    loadSession(lastSessId);
+  }
 
   // Register PWA Service Worker
   if ('serviceWorker' in navigator) {
