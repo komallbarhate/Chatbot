@@ -788,7 +788,6 @@ async function sendMessage() {
       activeSessionTokens += tokensMeta.totalTokenCount;
       updateQuotaUI();
     }
-  }
   } catch (err) {
     hideTyping();
     conversationHistory.pop();
