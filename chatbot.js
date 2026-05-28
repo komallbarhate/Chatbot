@@ -133,18 +133,25 @@ let currentSessionId    = null;
 let conversationHistory = [];
 let userLocationStr     = "";
 let activeSessionTokens = 0;
+let currentUserEmail    = null; // active logged-in email, or "guest"
 
 // ── Session Storage ───────────────────────────────────────────────────────────
-const SESSIONS_KEY = "novamind_sessions";
 const MAX_SESSIONS = 60;
 
+function getSessionsKey() {
+  if (currentUserEmail === "guest") {
+    return "novamind_sessions_guest";
+  }
+  return `novamind_sessions_${currentUserEmail || "guest"}`;
+}
+
 function getSessions() {
-  try { return JSON.parse(localStorage.getItem(SESSIONS_KEY) || "[]"); }
+  try { return JSON.parse(localStorage.getItem(getSessionsKey()) || "[]"); }
   catch { return []; }
 }
 
 function setSessions(arr) {
-  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(arr.slice(0, MAX_SESSIONS))); }
+  try { localStorage.setItem(getSessionsKey(), JSON.stringify(arr.slice(0, MAX_SESSIONS))); }
   catch (e) { console.warn("Storage error:", e); }
 }
 
@@ -1165,6 +1172,281 @@ document.addEventListener("click", e => {
   }
 });
 
+// ── Local Simulation Accounts DB ─────────────────────────────────────────────
+function getLocalAccounts() {
+  try {
+    return JSON.parse(localStorage.getItem("novamind_accounts") || "[]");
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveLocalAccounts(accounts) {
+  try {
+    localStorage.setItem("novamind_accounts", JSON.stringify(accounts));
+  } catch (e) {
+    console.error("Failed to save accounts database", e);
+  }
+}
+
+function findAccount(email) {
+  const accounts = getLocalAccounts();
+  return accounts.find(a => a.email.toLowerCase() === email.toLowerCase()) || null;
+}
+
+function createAccount(email, password) {
+  const accounts = getLocalAccounts();
+  if (findAccount(email)) return false;
+  
+  accounts.push({
+    email: email.toLowerCase(),
+    password: password
+  });
+  saveLocalAccounts(accounts);
+  return true;
+}
+
+function updateAccountPassword(email, newPassword) {
+  const accounts = getLocalAccounts();
+  const index = accounts.findIndex(a => a.email.toLowerCase() === email.toLowerCase());
+  if (index === -1) return false;
+  
+  accounts[index].password = newPassword;
+  saveLocalAccounts(accounts);
+  return true;
+}
+
+let generatedOTP = null;
+let otpEmailTarget = null;
+
+const authOverlay = document.getElementById("auth-overlay");
+const sectionLogin = document.getElementById("section-login");
+const sectionRegister = document.getElementById("section-register");
+const sectionForgot = document.getElementById("section-forgot");
+const userProfileRow = document.getElementById("user-profile-row");
+const userDisplayEmail = document.getElementById("user-display-email");
+const signoutBtn = document.getElementById("signout-btn");
+
+function showAuthSection(sectionId) {
+  sectionLogin.style.display = sectionId === "login" ? "block" : "none";
+  sectionRegister.style.display = sectionId === "register" ? "block" : "none";
+  sectionForgot.style.display = sectionId === "forgot" ? "block" : "none";
+}
+
+function authenticateUser(email) {
+  currentUserEmail = email;
+  localStorage.setItem("novamind_auth_user", email);
+  
+  // Show Profile elements in sidebar
+  if (userProfileRow) userProfileRow.style.display = "flex";
+  if (userDisplayEmail) {
+    userDisplayEmail.textContent = email === "guest" ? "Guest Profile" : email;
+  }
+  
+  // Hide Overlay lock screen
+  if (authOverlay) authOverlay.style.display = "none";
+  
+  // Enable Chat inputs
+  inputEl.disabled = false;
+  inputEl.placeholder = "Ask NovaMind anything…";
+  
+  // Render sessions list for this user
+  renderSessions();
+  
+  // Load last active session if exists (only for real accounts)
+  if (email !== "guest") {
+    const lastSessId = localStorage.getItem("novamind_last_session_id");
+    if (lastSessId) {
+      loadSession(lastSessId);
+    } else {
+      startFreshChat();
+    }
+  } else {
+    startFreshChat();
+  }
+  
+  // Update Quota display
+  updateQuotaUI();
+}
+
+function checkAuthSession() {
+  const activeUser = localStorage.getItem("novamind_auth_user");
+  if (activeUser) {
+    authenticateUser(activeUser);
+  } else {
+    // Show overlay lockout
+    if (authOverlay) authOverlay.style.display = "flex";
+    if (userProfileRow) userProfileRow.style.display = "none";
+    inputEl.disabled = true;
+    inputEl.placeholder = "Please log in to continue…";
+    showAuthSection("login");
+  }
+}
+
+// ── Auth Event Listeners ──────────────────────────────────────────────────────
+const loginForm = document.getElementById("login-form");
+if (loginForm) {
+  loginForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const email = document.getElementById("login-email").value.trim();
+    const pwd = document.getElementById("login-pwd").value;
+    
+    const account = findAccount(email);
+    if (!account) {
+      alert("No account found with this email. Please sign up.");
+      return;
+    }
+    
+    if (account.password !== pwd) {
+      alert("Incorrect password. Please try again.");
+      return;
+    }
+    
+    document.getElementById("login-email").value = "";
+    document.getElementById("login-pwd").value = "";
+    authenticateUser(email);
+  });
+}
+
+const registerForm = document.getElementById("register-form");
+if (registerForm) {
+  registerForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const email = document.getElementById("register-email").value.trim();
+    const pwd = document.getElementById("register-pwd").value;
+    
+    if (pwd.length < 6) {
+      alert("Password must be at least 6 characters long.");
+      return;
+    }
+    
+    const success = createAccount(email, pwd);
+    if (!success) {
+      alert("An account with this email already exists. Please sign in.");
+      return;
+    }
+    
+    alert("Account created successfully! Logging you in...");
+    document.getElementById("register-email").value = "";
+    document.getElementById("register-pwd").value = "";
+    authenticateUser(email);
+  });
+}
+
+const guestBtnLogin = document.getElementById("guest-btn-login");
+const guestBtnRegister = document.getElementById("guest-btn-register");
+[guestBtnLogin, guestBtnRegister].forEach(btn => {
+  if (btn) {
+    btn.addEventListener("click", () => {
+      authenticateUser("guest");
+    });
+  }
+});
+
+const gotoRegister = document.getElementById("goto-register");
+const gotoLogin = document.getElementById("goto-login");
+const gotoForgot = document.getElementById("goto-forgot");
+const forgotBackLogin = document.getElementById("forgot-back-login");
+
+if (gotoRegister) gotoRegister.addEventListener("click", () => showAuthSection("register"));
+if (gotoLogin) gotoLogin.addEventListener("click", () => showAuthSection("login"));
+if (gotoForgot) gotoForgot.addEventListener("click", () => showAuthSection("forgot"));
+if (forgotBackLogin) forgotBackLogin.addEventListener("click", () => showAuthSection("login"));
+
+// Forgot Password Flow
+const forgotEmailForm = document.getElementById("forgot-email-form");
+const forgotOtpForm = document.getElementById("forgot-otp-form");
+const forgotEmailInput = document.getElementById("forgot-email");
+const forgotDesc = document.getElementById("forgot-desc");
+const simulatorNotification = document.getElementById("simulator-notification");
+const simOtpCodeEl = document.getElementById("sim-otp-code");
+const simCloseBtn = document.getElementById("sim-close-btn");
+
+if (forgotEmailForm) {
+  forgotEmailForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const email = forgotEmailInput.value.trim();
+    
+    const account = findAccount(email);
+    if (!account) {
+      alert("No account found with this email address.");
+      return;
+    }
+    
+    generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
+    otpEmailTarget = email;
+    
+    if (simOtpCodeEl) simOtpCodeEl.textContent = generatedOTP;
+    if (simulatorNotification) simulatorNotification.style.display = "block";
+    
+    if (forgotDesc) forgotDesc.textContent = `A 6-digit OTP has been sent to ${email} (Check simulated Gmail notification below).`;
+    forgotEmailForm.style.display = "none";
+    forgotOtpForm.style.display = "block";
+  });
+}
+
+if (forgotOtpForm) {
+  forgotOtpForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const enteredOTP = document.getElementById("otp-code").value.trim();
+    const newPwd = document.getElementById("new-password").value.trim();
+    
+    if (enteredOTP !== generatedOTP) {
+      alert("Invalid OTP code. Please check the simulator popup and try again.");
+      return;
+    }
+    
+    if (newPwd.length < 6) {
+      alert("Password must be at least 6 characters long.");
+      return;
+    }
+    
+    const success = updateAccountPassword(otpEmailTarget, newPwd);
+    if (success) {
+      alert("Password successfully reset! You can now log in.");
+      if (simulatorNotification) simulatorNotification.style.display = "none";
+      generatedOTP = null;
+      otpEmailTarget = null;
+      
+      forgotEmailForm.style.display = "block";
+      forgotOtpForm.style.display = "none";
+      document.getElementById("otp-code").value = "";
+      document.getElementById("new-password").value = "";
+      forgotEmailInput.value = "";
+      
+      showAuthSection("login");
+    } else {
+      alert("Something went wrong. Please try again.");
+    }
+  });
+}
+
+if (simCloseBtn && simulatorNotification) {
+  simCloseBtn.addEventListener("click", () => {
+    simulatorNotification.style.display = "none";
+  });
+}
+
+// Sign Out Listener
+if (signoutBtn) {
+  signoutBtn.addEventListener("click", () => {
+    if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+    
+    localStorage.removeItem("novamind_auth_user");
+    localStorage.removeItem("novamind_last_session_id");
+    
+    currentUserEmail = null;
+    activeSessionTokens = 0;
+    
+    messagesEl.querySelectorAll(".message").forEach(m => m.remove());
+    conversationHistory = [];
+    messageCount = 0;
+    msgCountEl.textContent = 0;
+    
+    checkAuthSession();
+  });
+}
+
 // ── Quota & Token Tracker Logic ──────────────────────────────────────────────
 let dailyRequestCount = 0;
 let requestTimestamps = [];
@@ -1258,17 +1540,12 @@ window.addEventListener("load", async () => {
   // Initialize Quota tracker state
   initQuotaTracker();
 
-  // Render saved sessions
-  renderSessions();
+  // Initialize Authentication (locks or loads app)
+  checkAuthSession();
+
   updateIncognitoUI();
   if (incognitoBanner) incognitoBanner.classList.remove("visible");
   if (filePreviewArea) filePreviewArea.style.display = "none";
-
-  // Load last active session if exists
-  const lastSessId = localStorage.getItem("novamind_last_session_id");
-  if (lastSessId) {
-    loadSession(lastSessId);
-  }
 
   // Register PWA Service Worker
   if ('serviceWorker' in navigator) {
@@ -1279,8 +1556,10 @@ window.addEventListener("load", async () => {
 
   const ok = await discoverModel();
 
-  inputEl.disabled    = false;
-  inputEl.placeholder = "Ask NovaMind anything…";
+  if (ok && localStorage.getItem("novamind_auth_user")) {
+    inputEl.disabled    = false;
+    inputEl.placeholder = "Ask NovaMind anything…";
+  }
   sendBtn.disabled    = true;
 
   if (ok) console.log(`🚀 NovaMind ready — model: ${GEMINI_MODEL}`);

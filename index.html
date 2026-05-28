@@ -120,6 +120,21 @@
             <span class="stat-label">Session</span>
           </div>
         </div>
+
+        <!-- User Profile Row (hidden until authenticated) -->
+        <div class="user-profile-row" id="user-profile-row" style="display: none;">
+          <div class="user-profile-info">
+            <div class="user-profile-avatar" id="user-profile-avatar">U</div>
+            <span class="user-profile-email" id="user-display-email">user@example.com</span>
+          </div>
+          <button class="signout-btn" id="signout-btn" title="Sign Out">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+          </button>
+        </div>
       </div>
     </aside>
 
@@ -318,6 +333,102 @@
           <button id="share-link-copy-btn">Copy Link</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ── Authentication Overlay ── -->
+  <div class="auth-overlay" id="auth-overlay">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <div class="logo-icon">N</div>
+        <span class="logo-text">NovaMind</span>
+      </div>
+      
+      <!-- Sign In Section -->
+      <div class="auth-section" id="section-login">
+        <h2>Welcome back</h2>
+        <p class="auth-subtitle">Sign in to your account to continue</p>
+        <form id="login-form">
+          <div class="form-group">
+            <label for="login-email">Email Address</label>
+            <input type="email" id="login-email" required placeholder="name@example.com" autocomplete="email" />
+          </div>
+          <div class="form-group">
+            <div class="label-row">
+              <label for="login-pwd">Password</label>
+              <button type="button" class="text-link" id="goto-forgot">Forgot password?</button>
+            </div>
+            <input type="password" id="login-pwd" required placeholder="Enter password" autocomplete="current-password" />
+          </div>
+          <button type="submit" class="auth-submit-btn">Sign In</button>
+          <button type="button" class="auth-guest-btn" id="guest-btn-login">Continue as Guest</button>
+        </form>
+        <p class="auth-footer">Don't have an account? <button type="button" class="text-link font-bold" id="goto-register">Sign up</button></p>
+      </div>
+
+      <!-- Sign Up Section -->
+      <div class="auth-section" id="section-register" style="display:none">
+        <h2>Create an account</h2>
+        <p class="auth-subtitle">Get started with a free NovaMind account</p>
+        <form id="register-form">
+          <div class="form-group">
+            <label for="register-email">Email Address</label>
+            <input type="email" id="register-email" required placeholder="name@example.com" autocomplete="email" />
+          </div>
+          <div class="form-group">
+            <label for="register-pwd">Password</label>
+            <input type="password" id="register-pwd" required placeholder="At least 6 characters" autocomplete="new-password" />
+          </div>
+          <button type="submit" class="auth-submit-btn">Create Account</button>
+          <button type="button" class="auth-guest-btn" id="guest-btn-register">Continue as Guest</button>
+        </form>
+        <p class="auth-footer">Already have an account? <button type="button" class="text-link font-bold" id="goto-login">Sign in</button></p>
+      </div>
+
+      <!-- Forgot Password Section -->
+      <div class="auth-section" id="section-forgot" style="display:none">
+        <h2>Reset password</h2>
+        <p class="auth-subtitle" id="forgot-desc">Enter your email and we'll send you an OTP to reset your password</p>
+        
+        <!-- Step 1: Request OTP -->
+        <form id="forgot-email-form">
+          <div class="form-group">
+            <label for="forgot-email">Email Address</label>
+            <input type="email" id="forgot-email" required placeholder="name@example.com" autocomplete="email" />
+          </div>
+          <button type="submit" class="auth-submit-btn">Send OTP</button>
+        </form>
+
+        <!-- Step 2: Verify OTP & Change Password -->
+        <form id="forgot-otp-form" style="display:none">
+          <div class="form-group">
+            <label for="otp-code">Enter OTP</label>
+            <input type="text" id="otp-code" required placeholder="6-digit code" maxlength="6" autocomplete="one-time-code" />
+          </div>
+          <div class="form-group">
+            <label for="new-password">New Password</label>
+            <input type="password" id="new-password" required placeholder="At least 6 characters" autocomplete="new-password" />
+          </div>
+          <button type="submit" class="auth-submit-btn">Reset Password</button>
+        </form>
+        <p class="auth-footer"><button type="button" class="text-link" id="forgot-back-login">Back to sign in</button></p>
+      </div>
+      
+      <!-- Simulator Notification Panel -->
+      <div class="simulator-notification" id="simulator-notification" style="display:none">
+        <div class="sim-header">
+          <span>📧 Gmail OTP Simulator</span>
+          <button type="button" class="sim-close" id="sim-close-btn">&times;</button>
+        </div>
+        <div class="sim-body">
+          <p><strong>From:</strong> security@novamind.ai</p>
+          <p><strong>Subject:</strong> NovaMind Password Reset OTP</p>
+          <hr />
+          <p>Your password reset code is: <strong class="otp-highlight" id="sim-otp-code">123456</strong></p>
+          <p>Use this code to complete your password reset.</p>
+        </div>
+      </div>
+
     </div>
   </div>
 
