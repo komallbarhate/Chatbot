@@ -6,9 +6,9 @@
 "use strict";
 
 // ── Gemini Configuration ──────────────────────────────────────────────────────
-const GEMINI_API_KEY = "AIzaSyB2BBdyfHzd8xdocuz9ZFWkUg2XEnT6MaA";
-const BASE_URL       = "https://generativelanguage.googleapis.com/v1beta";
+const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
+let GEMINI_API_KEY  = localStorage.getItem("novamind_api_key") || "";
 let GEMINI_MODEL    = null;
 let GEMINI_ENDPOINT = null;
 
@@ -772,6 +772,12 @@ window.addEventListener("load", async () => {
   if (incognitoBanner) incognitoBanner.classList.remove("visible");
   if (filePreviewArea) filePreviewArea.style.display = "none";
 
+  // If no API key saved, show the key setup modal first
+  if (!GEMINI_API_KEY) {
+    showKeyModal();
+    return;
+  }
+
   const ok = await discoverModel();
 
   inputEl.disabled    = false;
@@ -780,3 +786,88 @@ window.addEventListener("load", async () => {
 
   if (ok) console.log(`🚀 NovaMind ready — model: ${GEMINI_MODEL}`);
 });
+
+// ── API Key Modal ─────────────────────────────────────────────────────────────
+function showKeyModal() {
+  // Disable input while key is not set
+  inputEl.disabled = true;
+  sendBtn.disabled = true;
+
+  const overlay = document.createElement("div");
+  overlay.id = "key-modal-overlay";
+  overlay.innerHTML = `
+    <div class="key-modal">
+      <div class="key-modal-icon">🔑</div>
+      <h2 class="key-modal-title">Enter your Gemini API Key</h2>
+      <p class="key-modal-desc">
+        Your key is saved <strong>only in your browser</strong> (localStorage) —
+        it is never stored in the code or uploaded to GitHub.
+      </p>
+      <p class="key-modal-desc" style="margin-top:6px">
+        Get a free key at
+        <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a>
+      </p>
+      <div class="key-modal-input-wrap">
+        <input type="password" id="key-modal-input" placeholder="AIzaSy…" spellcheck="false" autocomplete="off"/>
+        <button class="key-modal-eye" id="key-modal-eye" title="Show/hide key">👁</button>
+      </div>
+      <div class="key-modal-error" id="key-modal-error"></div>
+      <button class="key-modal-btn" id="key-modal-save">Save &amp; Connect</button>
+      <p class="key-modal-hint">You can change your key anytime by clearing localStorage.</p>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const keyInput   = document.getElementById("key-modal-input");
+  const saveBtn    = document.getElementById("key-modal-save");
+  const errorEl    = document.getElementById("key-modal-error");
+  const eyeBtn     = document.getElementById("key-modal-eye");
+
+  keyInput.focus();
+
+  eyeBtn.addEventListener("click", () => {
+    keyInput.type = keyInput.type === "password" ? "text" : "password";
+  });
+
+  keyInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") saveBtn.click();
+  });
+
+  saveBtn.addEventListener("click", async () => {
+    const key = keyInput.value.trim();
+    if (!key || !key.startsWith("AIza")) {
+      errorEl.textContent = "Please enter a valid Gemini API key (starts with AIza…)";
+      return;
+    }
+
+    errorEl.textContent = "";
+    saveBtn.textContent = "Connecting…";
+    saveBtn.disabled    = true;
+
+    // Test the key
+    try {
+      const res  = await fetch(`${BASE_URL}/models?key=${key}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`);
+
+      // Key is valid — save it
+      localStorage.setItem("novamind_api_key", key);
+      GEMINI_API_KEY = key;
+
+      overlay.remove();
+
+      // Now connect
+      inputEl.placeholder = "Connecting to Gemini…";
+      const ok = await discoverModel();
+      inputEl.disabled    = false;
+      inputEl.placeholder = "Ask NovaMind anything…";
+      sendBtn.disabled    = true;
+      if (ok) console.log(`🚀 NovaMind ready — model: ${GEMINI_MODEL}`);
+
+    } catch (err) {
+      errorEl.textContent = `Invalid key: ${err.message.slice(0, 80)}`;
+      saveBtn.textContent = "Save & Connect";
+      saveBtn.disabled    = false;
+    }
+  });
+}

@@ -4,6 +4,75 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
+/* ── API Key Modal ───────────────────────────── */
+#key-modal-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.88);
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeSlideIn 0.25s ease;
+  backdrop-filter: blur(6px);
+}
+
+.key-modal {
+  background: #111; border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 16px; padding: 36px 32px; width: 100%; max-width: 420px;
+  display: flex; flex-direction: column; gap: 10px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.8);
+  animation: fadeSlideIn 0.3s ease;
+}
+
+.key-modal-icon { font-size: 2rem; text-align: center; }
+
+.key-modal-title {
+  font-size: 1.15rem; font-weight: 800; color: #f0f0f0;
+  text-align: center; letter-spacing: -0.3px; margin-bottom: 2px;
+}
+
+.key-modal-desc {
+  font-size: 0.82rem; color: #888; line-height: 1.6; text-align: center;
+}
+.key-modal-desc a { color: #ccc; text-decoration: underline; text-underline-offset: 3px; }
+.key-modal-desc strong { color: #bbb; }
+
+.key-modal-input-wrap {
+  display: flex; align-items: center; gap: 0;
+  background: #0a0a0a; border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 8px; overflow: hidden; margin-top: 6px;
+  transition: border-color 0.2s;
+}
+.key-modal-input-wrap:focus-within { border-color: rgba(255,255,255,0.35); }
+
+#key-modal-input {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: #f0f0f0; font-family: 'Inter', monospace; font-size: 0.88rem;
+  padding: 11px 14px; letter-spacing: 0.5px;
+}
+#key-modal-input::placeholder { color: #444; letter-spacing: 0; }
+
+.key-modal-eye {
+  background: transparent; border: none; border-left: 1px solid rgba(255,255,255,0.08);
+  padding: 0 12px; cursor: pointer; color: #555; font-size: 0.9rem;
+  height: 100%; transition: color 0.15s;
+}
+.key-modal-eye:hover { color: #aaa; }
+
+.key-modal-error {
+  font-size: 0.75rem; color: #f87171; min-height: 16px;
+  text-align: center; padding: 0 4px;
+}
+
+.key-modal-btn {
+  background: #ffffff; color: #000; border: none;
+  border-radius: 8px; padding: 11px 20px;
+  font-size: 0.88rem; font-weight: 700; font-family: 'Inter', sans-serif;
+  cursor: pointer; transition: all 0.18s; margin-top: 4px;
+}
+.key-modal-btn:hover { background: #e5e5e5; transform: translateY(-1px); }
+.key-modal-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.key-modal-hint { font-size: 0.69rem; color: #444; text-align: center; }
+
+
 /* ── CSS Variables ───────────────────────────── */
 :root {
   --bg-base:        #0a0a0a;

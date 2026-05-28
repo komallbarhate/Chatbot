@@ -1,0 +1,12 @@
+# Never commit sensitive files
+.env
+*.env
+config.local.js
+api_key.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
