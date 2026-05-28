@@ -1,6 +1,6 @@
 /* ============================================================
-   NovaMind — Gemini-Powered Chatbot
-   Powered by Google Gemini 2.0 Flash via REST API
+   NovaMind — Gemini-Powered Chatbot  v2
+   Features: History, File Attach, Search, Incognito Mode
    ============================================================ */
 
 "use strict";
@@ -9,216 +9,497 @@
 const GEMINI_API_KEY = "AIzaSyB2BBdyfHzd8xdocuz9ZFWkUg2XEnT6MaA";
 const BASE_URL       = "https://generativelanguage.googleapis.com/v1beta";
 
-// Will be populated by discoverModel() at startup
 let GEMINI_MODEL    = null;
 let GEMINI_ENDPOINT = null;
 
-const SYSTEM_PROMPT = `You are NovaMind, a helpful, friendly, and knowledgeable AI assistant built into a sleek chat interface.
+const SYSTEM_PROMPT = `You are NovaMind, a helpful, friendly, and knowledgeable AI assistant.
 - Be concise but thorough. Use a warm, conversational tone.
 - Use markdown: **bold**, *italic*, bullet points, and code blocks when helpful.
 - For code, always specify the language in the code fence.
 - Keep responses focused and avoid unnecessary filler phrases.
-- If asked who you are, say you are NovaMind, powered by Google Gemini.`;
+- If asked who you are, say you are NovaMind, powered by Google Gemini.
+- When a user shares an image, describe what you see and help with any related questions.
+- When a user shares a file's content, analyze it and assist accordingly.`;
 
 // ── DOM References ────────────────────────────────────────────────────────────
-const messagesEl    = document.getElementById("messages");
-const inputEl       = document.getElementById("user-input");
-const sendBtn       = document.getElementById("send-btn");
-const clearBtn      = document.getElementById("clear-btn");
-const typingEl      = document.getElementById("typing-indicator");
-const themeBtn      = document.getElementById("theme-toggle");
-const nlpToggleBtn  = document.getElementById("nlp-view-toggle");
-const msgCountEl    = document.getElementById("msg-count");
-const sessionTimeEl = document.getElementById("session-time");
-const mlStatusBadge = document.getElementById("ml-status-badge");
-const mlStatusText  = document.getElementById("ml-status-text");
-const mlDot         = document.getElementById("ml-dot");
-const botStatusText = document.getElementById("bot-status-text");
+const messagesEl          = document.getElementById("messages");
+const inputEl             = document.getElementById("user-input");
+const sendBtn             = document.getElementById("send-btn");
+const clearBtn            = document.getElementById("clear-btn");
+const typingEl            = document.getElementById("typing-indicator");
+const themeBtn            = document.getElementById("theme-toggle");
+const nlpToggleBtn        = document.getElementById("nlp-view-toggle");
+const msgCountEl          = document.getElementById("msg-count");
+const sessionTimeEl       = document.getElementById("session-time");
+const mlStatusText        = document.getElementById("ml-status-text");
+const mlDot               = document.getElementById("ml-dot");
+const botStatusText       = document.getElementById("bot-status-text");
+const searchInputEl       = document.getElementById("search-input");
+const searchClearBtn      = document.getElementById("search-clear-btn");
+const sessionListEl       = document.getElementById("session-list");
+const incognitoBanner     = document.getElementById("incognito-banner");
+const incognitoHeaderBtn  = document.getElementById("incognito-header-btn");
+const incognitoSidebarBtn = document.getElementById("incognito-sidebar-btn");
+const attachBtn           = document.getElementById("attach-btn");
+const fileInputEl         = document.getElementById("file-input");
+const filePreviewArea     = document.getElementById("file-preview-area");
+const fileChipNameEl      = document.getElementById("file-chip-name");
+const fileRemoveBtn       = document.getElementById("file-remove-btn");
+const inputAreaInner      = document.querySelector(".input-area-inner");
 
 // ── App State ─────────────────────────────────────────────────────────────────
-let messageCount   = 0;
-let sessionStart   = Date.now();
-let isDark         = false;
-let showInfoPanel  = true;
-let isWaiting      = false;
-
-/** Conversation history sent to Gemini (role: user | model) */
+let messageCount        = 0;
+let sessionStart        = Date.now();
+let isDark              = false;
+let showInfoPanel       = true;
+let isWaiting           = false;
+let isIncognito         = false;
+let attachedFile        = null;   // { name, type, mimeType, data, previewSrc }
+let currentSessionId    = null;
 let conversationHistory = [];
 
+// ── Session Storage ───────────────────────────────────────────────────────────
+const SESSIONS_KEY = "novamind_sessions";
+const MAX_SESSIONS = 60;
+
+function getSessions() {
+  try { return JSON.parse(localStorage.getItem(SESSIONS_KEY) || "[]"); }
+  catch { return []; }
+}
+
+function setSessions(arr) {
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(arr.slice(0, MAX_SESSIONS))); }
+  catch (e) { console.warn("Storage error:", e); }
+}
+
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function sanitizeHistory(history) {
+  /* Strip base64 blobs before persisting to localStorage */
+  return history.map(turn => ({
+    ...turn,
+    parts: turn.parts.map(p => p.inlineData ? { text: "[attached image]" } : p)
+  }));
+}
+
+// ── Session Operations ────────────────────────────────────────────────────────
+function createSession() {
+  const s = { id: genId(), title: "New chat", timestamp: Date.now(), lastActive: Date.now(), history: [], displayMessages: [] };
+  const all = [s, ...getSessions()];
+  setSessions(all);
+  return s;
+}
+
+function findSession(id) {
+  return getSessions().find(s => s.id === id) || null;
+}
+
+function updateSession(id, patch) {
+  const all = getSessions().map(s => s.id === id ? { ...s, ...patch } : s);
+  setSessions(all);
+}
+
+function removeSession(id) {
+  setSessions(getSessions().filter(s => s.id !== id));
+}
+
+function autoTitle(text) {
+  if (!currentSessionId || isIncognito) return;
+  const s = findSession(currentSessionId);
+  if (s && s.title === "New chat") {
+    updateSession(currentSessionId, { title: text.length > 46 ? text.slice(0, 46) + "…" : text });
+    renderSessions();
+  }
+}
+
+function persistMsg(msg) {
+  if (isIncognito || !currentSessionId) return;
+  const s = findSession(currentSessionId);
+  if (!s) return;
+  const msgs = [...(s.displayMessages || []), msg];
+  updateSession(currentSessionId, {
+    displayMessages: msgs,
+    lastActive: Date.now(),
+    history: sanitizeHistory(conversationHistory)
+  });
+}
+
+function ensureSession() {
+  if (!currentSessionId && !isIncognito) {
+    const s = createSession();
+    currentSessionId = s.id;
+    renderSessions();
+  }
+}
+
+// ── Session List Render ───────────────────────────────────────────────────────
+function renderSessions(filter = "") {
+  if (!sessionListEl) return;
+  const all = getSessions();
+  const q = filter.toLowerCase().trim();
+  const list = q
+    ? all.filter(s =>
+        s.title.toLowerCase().includes(q) ||
+        (s.displayMessages || []).some(m => (m.text || "").toLowerCase().includes(q))
+      )
+    : all;
+
+  if (list.length === 0) {
+    sessionListEl.innerHTML = `<p class="no-sessions">${q ? "No matching chats" : "No history yet"}</p>`;
+    return;
+  }
+
+  sessionListEl.innerHTML = list.map(s => `
+    <div class="session-item${s.id === currentSessionId ? " active" : ""}" id="sess-${s.id}"
+         onclick="loadSession('${s.id}')">
+      <div class="session-info">
+        <span class="session-title">${esc(s.title)}</span>
+        <span class="session-time">${relTime(s.lastActive)}</span>
+      </div>
+      <button class="session-delete" onclick="event.stopPropagation();deleteSession('${s.id}')" title="Delete chat">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+  `).join("");
+}
+
+function esc(str) {
+  return String(str)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function relTime(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 60000)    return "just now";
+  if (diff < 3600000)  return `${Math.floor(diff/60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff/3600000)}h ago`;
+  return new Date(ts).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+}
+
+// ── Load Session ──────────────────────────────────────────────────────────────
+function loadSession(id) {
+  if (id === currentSessionId) return;
+
+  if (isIncognito) { isIncognito = false; updateIncognitoUI(); }
+
+  const s = findSession(id);
+  if (!s) return;
+
+  currentSessionId    = id;
+  conversationHistory = [...(s.history || [])];
+  messageCount        = 0;
+  sessionStart        = Date.now();
+
+  // Clear messages
+  messagesEl.querySelectorAll(".message").forEach(m => m.remove());
+
+  // Hide hero
+  const hero = document.getElementById("copilot-hero");
+  const sug  = document.getElementById("suggestion-cards");
+  if (hero) hero.style.display = "none";
+  if (sug)  sug.style.display  = "none";
+
+  // Replay stored messages
+  (s.displayMessages || []).forEach(m => replayMsg(m));
+
+  renderSessions(searchInputEl ? searchInputEl.value : "");
+  scrollToBottom();
+}
+
+function replayMsg(msg) {
+  const isBot = msg.sender === "bot";
+  const wrapper = document.createElement("div");
+  wrapper.className = `message ${isBot ? "bot-message" : "user-message"}`;
+
+  const avatar = document.createElement("div");
+  avatar.className = `avatar ${isBot ? "bot-avatar" : "user-avatar"}`;
+  avatar.textContent = isBot ? "N" : "U";
+
+  const bw = document.createElement("div");
+  bw.className = "bubble-wrapper";
+
+  const bubble = document.createElement("div");
+  bubble.className = `bubble ${isBot ? "bot-bubble" : "user-bubble"}`;
+
+  if (msg.hasFile) {
+    const fc = document.createElement("div");
+    fc.className = "msg-file-chip";
+    fc.innerHTML = `📎 <span>${esc(msg.fileName || "file")}</span>`;
+    bubble.appendChild(fc);
+    if (msg.filePreviewSrc) {
+      const img = document.createElement("img");
+      img.src = msg.filePreviewSrc; img.className = "msg-image-preview";
+      img.alt = msg.fileName || "image"; bubble.appendChild(img);
+    }
+  }
+
+  if (isBot) {
+    const d = document.createElement("div");
+    d.innerHTML = markdownToHTML(msg.text || "");
+    bubble.appendChild(d);
+  } else {
+    if (msg.text) {
+      const span = document.createElement("span");
+      span.textContent = msg.text;
+      bubble.appendChild(span);
+    }
+  }
+
+  bw.appendChild(bubble);
+  if (isBot && msg.latencyMs !== undefined && !msg.error) {
+    bw.appendChild(buildGeminiPanel(msg.latencyMs, msg.tokensMeta || {}, GEMINI_MODEL || ""));
+  }
+
+  const ts = document.createElement("span");
+  ts.className = "timestamp"; ts.textContent = msg.timestamp || "";
+  bw.appendChild(ts);
+
+  if (isBot) { wrapper.appendChild(avatar); wrapper.appendChild(bw); }
+  else        { wrapper.appendChild(bw); wrapper.appendChild(avatar); }
+
+  messagesEl.appendChild(wrapper);
+  messageCount++;
+  msgCountEl.textContent = messageCount;
+}
+
+// ── Delete Session ────────────────────────────────────────────────────────────
+function deleteSession(id) {
+  removeSession(id);
+  if (id === currentSessionId) startFreshChat();
+  else renderSessions(searchInputEl ? searchInputEl.value : "");
+}
+
+// ── Start Fresh Chat ──────────────────────────────────────────────────────────
+function startFreshChat() {
+  messagesEl.querySelectorAll(".message").forEach(m => m.remove());
+  conversationHistory = [];
+  messageCount = 0;
+  msgCountEl.textContent = 0;
+  sessionStart = Date.now();
+  currentSessionId = null;
+  clearAttachedFile();
+
+  const hero = document.getElementById("copilot-hero");
+  const sug  = document.getElementById("suggestion-cards");
+  if (hero) hero.style.display = "";
+  if (sug)  sug.style.display  = "";
+
+  renderSessions(searchInputEl ? searchInputEl.value : "");
+}
+
+// ── Incognito Mode ────────────────────────────────────────────────────────────
+function toggleIncognito() {
+  isIncognito = !isIncognito;
+  if (isIncognito) {
+    // Clear everything for a private session
+    messagesEl.querySelectorAll(".message").forEach(m => m.remove());
+    conversationHistory = [];
+    messageCount = 0;
+    msgCountEl.textContent = 0;
+    sessionStart = Date.now();
+    currentSessionId = null;
+    clearAttachedFile();
+    const hero = document.getElementById("copilot-hero");
+    const sug  = document.getElementById("suggestion-cards");
+    if (hero) hero.style.display = "";
+    if (sug)  sug.style.display  = "";
+  }
+  updateIncognitoUI();
+  renderSessions(searchInputEl ? searchInputEl.value : "");
+}
+
+function updateIncognitoUI() {
+  const on = isIncognito;
+  if (incognitoBanner)     incognitoBanner.classList.toggle("visible", on);
+  if (incognitoHeaderBtn)  incognitoHeaderBtn.classList.toggle("active", on);
+  if (incognitoSidebarBtn) incognitoSidebarBtn.classList.toggle("active", on);
+  if (inputEl) inputEl.placeholder = on ? "Incognito — messages won't be saved…" : "Ask NovaMind anything…";
+}
+
+// ── File Attachment ───────────────────────────────────────────────────────────
+const SUPPORTED_IMAGE_TYPES = ["image/jpeg","image/png","image/gif","image/webp"];
+
+function handleFile(file) {
+  if (!file) return;
+  if (file.size > 4 * 1024 * 1024) { alert("File too large. Max size is 4MB."); return; }
+
+  const isImg = file.type.startsWith("image/");
+  if (isImg && !SUPPORTED_IMAGE_TYPES.includes(file.type)) {
+    alert("Unsupported image format. Use JPEG, PNG, GIF, or WebP."); return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const result = e.target.result;
+    if (isImg) {
+      attachedFile = {
+        name: file.name, type: "image",
+        mimeType: file.type,
+        data: result.split(",")[1],   // base64
+        previewSrc: result            // data URL for display
+      };
+    } else {
+      attachedFile = {
+        name: file.name, type: "text",
+        mimeType: "text/plain",
+        data: result,                 // raw text
+        previewSrc: null
+      };
+    }
+    showFilePreview();
+  };
+  isImg ? reader.readAsDataURL(file) : reader.readAsText(file);
+}
+
+function showFilePreview() {
+  if (!attachedFile || !filePreviewArea) return;
+  filePreviewArea.style.display = "flex";
+  if (fileChipNameEl) fileChipNameEl.textContent = attachedFile.name;
+  sendBtn.disabled = isWaiting;
+}
+
+function clearAttachedFile() {
+  attachedFile = null;
+  if (filePreviewArea) filePreviewArea.style.display = "none";
+  if (fileInputEl)     fileInputEl.value = "";
+  sendBtn.disabled = !inputEl.value.trim() || isWaiting;
+}
+
+// ── Timer ─────────────────────────────────────────────────────────────────────
 const getTime = () =>
   new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
-// Session timer
 setInterval(() => {
   const s = Math.floor((Date.now() - sessionStart) / 1000);
-  sessionTimeEl.textContent =
-    `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  if (sessionTimeEl) sessionTimeEl.textContent =
+    `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
 }, 1000);
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  MODEL DISCOVERY — calls ListModels to find what this key can actually use
-// ══════════════════════════════════════════════════════════════════════════════
+// ── Model Discovery ───────────────────────────────────────────────────────────
 async function discoverModel() {
   try {
     if (mlStatusText) mlStatusText.textContent = "Connecting…";
-    if (mlDot) { mlDot.className = ""; mlDot.classList.add("ml-dot", "ml-dot--loading"); }
+    if (mlDot) { mlDot.className = ""; mlDot.classList.add("ml-dot","ml-dot--loading"); }
 
     const res  = await fetch(`${BASE_URL}/models?key=${GEMINI_API_KEY}`);
     const data = await res.json();
-
     if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`);
 
-    // Prefer flash models, then pro, then anything that supports generateContent
-    const PREFER = ["flash", "pro"];
+    const PREFER = ["flash","pro"];
     const models = (data.models || [])
       .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
-      .map(m => m.name.replace("models/", ""));
+      .map(m => m.name.replace("models/",""));
 
-    // Sort: prefer flash > pro > others
-    models.sort((a, b) => {
+    models.sort((a,b) => {
       const ai = PREFER.findIndex(p => a.includes(p));
       const bi = PREFER.findIndex(p => b.includes(p));
-      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      return (ai===-1?99:ai)-(bi===-1?99:bi);
     });
 
-    if (!models.length) throw new Error("No generateContent-capable models found for this API key.");
+    if (!models.length) throw new Error("No generateContent models found.");
 
     GEMINI_MODEL    = models[0];
     GEMINI_ENDPOINT = `${BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-    console.log("✅ Available models:", models);
-    console.log("✅ Using:", GEMINI_MODEL);
-
-    updateModelLabel(GEMINI_MODEL);
-    if (mlDot) { mlDot.className = ""; mlDot.classList.add("ml-dot", "ml-dot--ready"); }
-
+    updateModelLabel();
+    if (mlDot) { mlDot.className = ""; mlDot.classList.add("ml-dot","ml-dot--ready"); }
     return true;
   } catch (err) {
     console.error("Model discovery failed:", err.message);
-    if (mlStatusText) mlStatusText.textContent = `Key error: ${err.message.slice(0, 40)}`;
-    if (mlDot) { mlDot.className = ""; mlDot.classList.add("ml-dot", "ml-dot--error"); }
-    if (botStatusText) botStatusText.textContent = "API key error — check console";
+    if (mlStatusText) mlStatusText.textContent = "Error";
+    if (mlDot) { mlDot.className = ""; mlDot.classList.add("ml-dot","ml-dot--error"); }
+    if (botStatusText) botStatusText.textContent = "API key error";
     return false;
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  GEMINI API CALL
-// ══════════════════════════════════════════════════════════════════════════════
-async function callGemini(userText) {
-  if (!GEMINI_MODEL) throw new Error("No model available. Please refresh the page.");
+// ── Gemini API ────────────────────────────────────────────────────────────────
+async function callGemini(text, imagePart = null) {
+  if (!GEMINI_MODEL) throw new Error("No model. Please refresh.");
 
-  // Push user turn into history
-  conversationHistory.push({ role: "user", parts: [{ text: userText }] });
+  const parts = [];
+  if (imagePart) parts.push(imagePart);
+  if (text)      parts.push({ text });
+  if (!parts.length) parts.push({ text: "" });
+
+  conversationHistory.push({ role: "user", parts });
 
   const body = {
     system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
     contents: conversationHistory,
-    generationConfig: {
-      temperature: 0.8,
-      topK: 40,
-      topP: 0.95,
-      maxOutputTokens: 1024,
-    },
+    generationConfig: { temperature: 0.8, topK: 40, topP: 0.95, maxOutputTokens: 1024 },
     safetySettings: [
-      { category: "HARM_CATEGORY_HARASSMENT",        threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-      { category: "HARM_CATEGORY_HATE_SPEECH",       threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+      { category:"HARM_CATEGORY_HARASSMENT",       threshold:"BLOCK_MEDIUM_AND_ABOVE" },
+      { category:"HARM_CATEGORY_HATE_SPEECH",      threshold:"BLOCK_MEDIUM_AND_ABOVE" },
+      { category:"HARM_CATEGORY_SEXUALLY_EXPLICIT",threshold:"BLOCK_MEDIUM_AND_ABOVE" },
+      { category:"HARM_CATEGORY_DANGEROUS_CONTENT",threshold:"BLOCK_MEDIUM_AND_ABOVE" },
     ],
   };
 
   const t0  = performance.now();
   const res = await fetch(GEMINI_ENDPOINT, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify(body),
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
+    const err = await res.json().catch(()=>({}));
     throw new Error(err?.error?.message || `HTTP ${res.status}`);
   }
 
-  const data       = await res.json();
-  const latencyMs  = Math.round(performance.now() - t0);
-  const replyText  = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  const tokensMeta = data?.usageMetadata || {};
+  const data      = await res.json();
+  const latencyMs = Math.round(performance.now() - t0);
+  const replyText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const tokensMeta= data?.usageMetadata || {};
 
-  // Push model reply into history
   conversationHistory.push({ role: "model", parts: [{ text: replyText }] });
 
-  return { replyText, latencyMs, tokensMeta, model: GEMINI_MODEL };
+  return { replyText, latencyMs, tokensMeta };
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  MARKDOWN → HTML  (lightweight renderer)
-// ══════════════════════════════════════════════════════════════════════════════
+// ── Markdown ──────────────────────────────────────────────────────────────────
 function markdownToHTML(text) {
-  // Escape HTML first
-  let html = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  let html = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
-  // Code blocks (``` lang \n code ```)
-  html = html.replace(/```(\w+)?\n?([\s\S]*?)```/g, (_, lang, code) => {
-    const langLabel = lang ? `<span class="code-lang">${lang}</span>` : "";
-    return `<div class="code-block">${langLabel}<pre><code>${code.trim()}</code></pre></div>`;
+  html = html.replace(/```(\w+)?\n?([\s\S]*?)```/g, (_,lang,code) => {
+    const l = lang ? `<span class="code-lang">${lang}</span>` : "";
+    return `<div class="code-block">${l}<pre><code>${code.trim()}</code></pre></div>`;
   });
-
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, "<code class=\"inline-code\">$1</code>");
-
-  // Bold
+  html = html.replace(/`([^`]+)`/g, `<code class="inline-code">$1</code>`);
   html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-
-  // Italic
-  html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
-
-  // Headings (## heading)
-  html = html.replace(/^### (.+)$/gm, "<h4>$1</h4>");
-  html = html.replace(/^## (.+)$/gm,  "<h3>$1</h3>");
-  html = html.replace(/^# (.+)$/gm,   "<h2>$1</h2>");
-
-  // Unordered lists
-  html = html.replace(/^[\*\-] (.+)$/gm, "<li>$1</li>");
+  html = html.replace(/\*(.+?)\*/g,     "<em>$1</em>");
+  html = html.replace(/^### (.+)$/gm,   "<h4>$1</h4>");
+  html = html.replace(/^## (.+)$/gm,    "<h3>$1</h3>");
+  html = html.replace(/^# (.+)$/gm,     "<h2>$1</h2>");
+  html = html.replace(/^[\*\-] (.+)$/gm,"<li>$1</li>");
   html = html.replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
-
-  // Ordered lists
   html = html.replace(/^\d+\. (.+)$/gm, "<li>$1</li>");
-
-  // Line breaks (two newlines = paragraph break)
-  html = html.replace(/\n\n/g, "</p><p>");
-  html = html.replace(/\n/g, "<br/>");
-
-  // Wrap in paragraph
+  html = html.replace(/\n\n/g,"</p><p>");
+  html = html.replace(/\n/g,"<br/>");
   html = `<p>${html}</p>`;
-
-  // Clean up empty paragraphs
-  html = html.replace(/<p>\s*<\/p>/g, "");
-
+  html = html.replace(/<p>\s*<\/p>/g,"");
   return html;
 }
 
-// ── Update header labels when a fallback model is selected ───────────────────
-function updateModelLabel(model) {
-  if (botStatusText) botStatusText.textContent = ``;
-  if (mlStatusText)  mlStatusText.textContent  = `Ready`;
+// ── Model Label ───────────────────────────────────────────────────────────────
+function updateModelLabel() {
+  if (botStatusText) botStatusText.textContent = "";
+  if (mlStatusText)  mlStatusText.textContent  = "Ready";
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  GEMINI INFO PANEL (shown below bot messages)
-// ══════════════════════════════════════════════════════════════════════════════
+// ── Gemini Info Panel ─────────────────────────────────────────────────────────
 function buildGeminiPanel(latencyMs, tokensMeta, model) {
   const panel = document.createElement("div");
   panel.className = "ml-panel" + (showInfoPanel ? "" : " ml-panel--hidden");
 
-  const promptTok = tokensMeta.promptTokenCount      ?? "—";
-  const respTok   = tokensMeta.candidatesTokenCount  ?? "—";
-  const totalTok  = tokensMeta.totalTokenCount        ?? "—";
+  const pt = tokensMeta.promptTokenCount     ?? "—";
+  const rt = tokensMeta.candidatesTokenCount ?? "—";
+  const tt = tokensMeta.totalTokenCount      ?? "—";
 
-  const modelLabel = model || GEMINI_MODEL;
   panel.innerHTML = `
     <div class="ml-pipeline-row">
       <span class="ml-arch-chip">Input</span>
@@ -229,51 +510,25 @@ function buildGeminiPanel(latencyMs, tokensMeta, model) {
       <span class="ml-arch-arrow">→</span>
       <span class="ml-arch-chip">Response</span>
     </div>
-
     <div class="ml-stats-row">
-      <div class="ml-stat">
-        <span class="ml-stat-val">${promptTok}</span>
-        <span class="ml-stat-lbl">Input tokens</span>
-      </div>
-      <div class="ml-stat">
-        <span class="ml-stat-val">${respTok}</span>
-        <span class="ml-stat-lbl">Output tokens</span>
-      </div>
-      <div class="ml-stat">
-        <span class="ml-stat-val">${totalTok}</span>
-        <span class="ml-stat-lbl">Total tokens</span>
-      </div>
-      <div class="ml-stat">
-        <span class="ml-stat-val">${latencyMs}<small style="font-size:0.55rem;font-weight:500">ms</small></span>
-        <span class="ml-stat-lbl">Latency</span>
-      </div>
-    </div>
-  `;
-
+      <div class="ml-stat"><span class="ml-stat-val">${pt}</span><span class="ml-stat-lbl">Input tok</span></div>
+      <div class="ml-stat"><span class="ml-stat-val">${rt}</span><span class="ml-stat-lbl">Output tok</span></div>
+      <div class="ml-stat"><span class="ml-stat-val">${tt}</span><span class="ml-stat-lbl">Total tok</span></div>
+      <div class="ml-stat"><span class="ml-stat-val">${latencyMs}<small style="font-size:.55rem;font-weight:500">ms</small></span><span class="ml-stat-lbl">Latency</span></div>
+    </div>`;
   return panel;
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  ERROR PANEL
-// ══════════════════════════════════════════════════════════════════════════════
-function buildErrorPanel(errorMsg) {
-  const panel = document.createElement("div");
-  panel.className = "ml-panel";
-  panel.style.borderColor = "rgba(239,68,68,0.35)";
-  panel.style.background  = "#fff5f5";
-  panel.innerHTML = `
-    <div class="ml-panel-header">
-      <span class="ml-panel-title" style="color:#dc2626">⚠️ API Error</span>
-    </div>
-    <p class="ml-note" style="color:#dc2626">${errorMsg}</p>
-  `;
-  return panel;
+function buildErrorPanel(msg) {
+  const p = document.createElement("div");
+  p.className = "ml-panel";
+  p.style.borderColor = "rgba(239,68,68,0.28)";
+  p.innerHTML = `<p class="ml-note" style="color:#f87171">⚠️ ${msg}</p>`;
+  return p;
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  MESSAGE RENDERER
-// ══════════════════════════════════════════════════════════════════════════════
-function renderMessage(text, sender, { latencyMs, tokensMeta, model, error } = {}) {
+// ── Message Renderer ──────────────────────────────────────────────────────────
+function renderMessage(text, sender, { latencyMs, tokensMeta, error, fileInfo } = {}) {
   const isBot = sender === "bot";
 
   const wrapper = document.createElement("div");
@@ -283,95 +538,128 @@ function renderMessage(text, sender, { latencyMs, tokensMeta, model, error } = {
   avatar.className = `avatar ${isBot ? "bot-avatar" : "user-avatar"}`;
   avatar.textContent = isBot ? "N" : "U";
 
-  const bubbleWrapper = document.createElement("div");
-  bubbleWrapper.className = "bubble-wrapper";
+  const bw = document.createElement("div");
+  bw.className = "bubble-wrapper";
 
   const bubble = document.createElement("div");
   bubble.className = `bubble ${isBot ? "bot-bubble" : "user-bubble"}`;
 
-  if (isBot) {
-    bubble.innerHTML = markdownToHTML(text);
-  } else {
-    bubble.textContent = text;
-  }
-
-  bubbleWrapper.appendChild(bubble);
-
-  // Append info panel for bot messages
-  if (isBot) {
-    if (error) {
-      bubbleWrapper.appendChild(buildErrorPanel(error));
-    } else if (latencyMs !== undefined) {
-      bubbleWrapper.appendChild(buildGeminiPanel(latencyMs, tokensMeta || {}, model));
+  // File chip in user message
+  if (fileInfo && !isBot) {
+    const fc = document.createElement("div");
+    fc.className = "msg-file-chip";
+    fc.innerHTML = `📎 <span>${esc(fileInfo.name)}</span>`;
+    bubble.appendChild(fc);
+    if (fileInfo.type === "image" && fileInfo.previewSrc) {
+      const img = document.createElement("img");
+      img.src = fileInfo.previewSrc; img.className = "msg-image-preview";
+      img.alt = fileInfo.name; bubble.appendChild(img);
     }
   }
 
-  const ts = document.createElement("span");
-  ts.className = "timestamp";
-  ts.textContent = getTime();
-  bubbleWrapper.appendChild(ts);
+  if (isBot) {
+    const d = document.createElement("div");
+    d.innerHTML = markdownToHTML(text); bubble.appendChild(d);
+  } else {
+    if (text) { const s = document.createElement("span"); s.textContent = text; bubble.appendChild(s); }
+  }
 
-  if (isBot) { wrapper.appendChild(avatar); wrapper.appendChild(bubbleWrapper); }
-  else        { wrapper.appendChild(bubbleWrapper); wrapper.appendChild(avatar); }
+  bw.appendChild(bubble);
+
+  if (isBot) {
+    if (error)                   bw.appendChild(buildErrorPanel(error));
+    else if (latencyMs !== undefined) bw.appendChild(buildGeminiPanel(latencyMs, tokensMeta || {}, GEMINI_MODEL));
+  }
+
+  const ts = document.createElement("span");
+  ts.className = "timestamp"; ts.textContent = getTime();
+  bw.appendChild(ts);
+
+  if (isBot) { wrapper.appendChild(avatar); wrapper.appendChild(bw); }
+  else        { wrapper.appendChild(bw); wrapper.appendChild(avatar); }
 
   messagesEl.appendChild(wrapper);
   scrollToBottom();
   messageCount++;
   msgCountEl.textContent = messageCount;
-
   return wrapper;
 }
 
-function scrollToBottom() {
-  messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: "smooth" });
-}
-function showTyping() { typingEl.classList.add("visible"); scrollToBottom(); }
-function hideTyping() { typingEl.classList.remove("visible"); }
+function scrollToBottom() { messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior:"smooth" }); }
+function showTyping()     { typingEl.classList.add("visible"); scrollToBottom(); }
+function hideTyping()     { typingEl.classList.remove("visible"); }
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  SEND MESSAGE — main pipeline
-// ══════════════════════════════════════════════════════════════════════════════
+// ── Send Message ──────────────────────────────────────────────────────────────
 async function sendMessage() {
-  const text = inputEl.value.trim();
-  if (!text || isWaiting) return;
+  const text    = inputEl.value.trim();
+  const hasFile = !!attachedFile;
+  if (!text && !hasFile) return;
+  if (isWaiting) return;
 
-  // Hide intro hero/suggestions
+  // Ensure a session exists
+  ensureSession();
+
+  // Hide hero
   const hero = document.getElementById("copilot-hero");
   const sug  = document.getElementById("suggestion-cards");
   if (hero) hero.style.display = "none";
   if (sug)  sug.style.display  = "none";
 
-  renderMessage(text, "user");
+  // Auto-title from first message
+  autoTitle(text || (attachedFile?.name ?? "File conversation"));
+
+  // Determine what to send to the API
+  let imagePart    = null;
+  let effectiveText= text;
+  const fi         = attachedFile ? { ...attachedFile } : null;
+
+  if (attachedFile) {
+    if (attachedFile.type === "image") {
+      imagePart = { inlineData: { data: attachedFile.data, mimeType: attachedFile.mimeType } };
+    } else {
+      // Inject text file content into the message
+      const snippet = attachedFile.data.slice(0, 8000);
+      effectiveText = `[File: ${attachedFile.name}]\n\`\`\`\n${snippet}\n\`\`\`\n\n${text}`;
+    }
+  }
+
+  // Render user message
+  renderMessage(text, "user", { fileInfo: fi });
+
+  // Persist user message
+  persistMsg({
+    text, sender: "user", timestamp: getTime(),
+    hasFile, fileName: fi?.name,
+    filePreviewSrc: fi?.type === "image" ? fi.previewSrc : null
+  });
+
+  // Clear input
   inputEl.value = "";
   inputEl.style.height = "auto";
+  clearAttachedFile();
   sendBtn.disabled = true;
   isWaiting = true;
-
   showTyping();
 
   try {
-    const { replyText, latencyMs, tokensMeta } = await callGemini(text);
+    const { replyText, latencyMs, tokensMeta } = await callGemini(effectiveText, imagePart);
     hideTyping();
     renderMessage(replyText, "bot", { latencyMs, tokensMeta });
+    persistMsg({ text: replyText, sender: "bot", timestamp: getTime(), latencyMs, tokensMeta });
   } catch (err) {
     hideTyping();
-    const errMsg = err.message || "Unknown error";
-    // Don't add to history if request failed
-    conversationHistory.pop(); // remove the last user message
+    conversationHistory.pop();
     renderMessage(
-      `Sorry, I couldn't reach the Gemini API. Please check your connection and try again.`,
-      "bot",
-      { error: errMsg }
+      "Sorry, I couldn't reach the Gemini API. Please check your connection and try again.",
+      "bot", { error: err.message || "Unknown error" }
     );
   } finally {
     isWaiting = false;
-    sendBtn.disabled = !inputEl.value.trim();
+    sendBtn.disabled = !inputEl.value.trim() && !attachedFile;
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  EVENTS
-// ══════════════════════════════════════════════════════════════════════════════
+// ── Events ────────────────────────────────────────────────────────────────────
 sendBtn.addEventListener("click", sendMessage);
 
 inputEl.addEventListener("keydown", e => {
@@ -381,83 +669,114 @@ inputEl.addEventListener("keydown", e => {
 inputEl.addEventListener("input", () => {
   inputEl.style.height = "auto";
   inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
-  sendBtn.disabled = !inputEl.value.trim() || isWaiting;
+  sendBtn.disabled = (!inputEl.value.trim() && !attachedFile) || isWaiting;
 });
 
 // Sidebar chips
 document.querySelectorAll(".chip").forEach(chip => {
   chip.addEventListener("click", () => {
     const msg = chip.dataset.msg;
-    if (msg && !isWaiting) {
-      inputEl.value = msg;
-      sendBtn.disabled = false;
-      sendMessage();
-    }
+    if (msg && !isWaiting) { inputEl.value = msg; sendBtn.disabled = false; sendMessage(); }
   });
 });
 
-// Suggestion cards (hero section)
+// Suggestion cards
 document.querySelectorAll(".suggestion-card").forEach(card => {
   card.addEventListener("click", () => {
     const msg = card.dataset.msg;
-    if (msg && !isWaiting) {
-      inputEl.value = msg;
-      sendBtn.disabled = false;
-      sendMessage();
-    }
+    if (msg && !isWaiting) { inputEl.value = msg; sendBtn.disabled = false; sendMessage(); }
   });
 });
 
-// Clear / New Chat
+// New Chat
 clearBtn.addEventListener("click", () => {
-  messagesEl.querySelectorAll(".message").forEach(m => m.remove());
-  conversationHistory = [];
-  messageCount = 0;
-  msgCountEl.textContent = 0;
-  sessionStart = Date.now();
-  // Restore Copilot hero
-  const hero = document.getElementById("copilot-hero");
-  const sug  = document.getElementById("suggestion-cards");
-  if (hero) hero.style.display = "";
-  if (sug)  sug.style.display  = "";
+  if (isIncognito) {
+    // Stay in incognito, just clear messages
+    messagesEl.querySelectorAll(".message").forEach(m => m.remove());
+    conversationHistory = [];
+    messageCount = 0; msgCountEl.textContent = 0;
+    sessionStart = Date.now(); currentSessionId = null;
+    clearAttachedFile();
+    const hero = document.getElementById("copilot-hero");
+    const sug  = document.getElementById("suggestion-cards");
+    if (hero) hero.style.display = "";
+    if (sug)  sug.style.display  = "";
+  } else {
+    startFreshChat();
+  }
 });
 
-// Theme toggle
+// Theme
 themeBtn.addEventListener("click", () => {
   isDark = !isDark;
   document.body.classList.toggle("dark", isDark);
 });
 
-// Info panel toggle (🧠 button)
+// Info panel toggle
 nlpToggleBtn.addEventListener("click", () => {
   showInfoPanel = !showInfoPanel;
   nlpToggleBtn.classList.toggle("active", showInfoPanel);
-  nlpToggleBtn.title = showInfoPanel ? "Hide Info Panels" : "Show Info Panels";
-  document.querySelectorAll(".ml-panel").forEach(p => {
-    p.classList.toggle("ml-panel--hidden", !showInfoPanel);
-  });
+  document.querySelectorAll(".ml-panel").forEach(p =>
+    p.classList.toggle("ml-panel--hidden", !showInfoPanel)
+  );
 });
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  INIT
-// ══════════════════════════════════════════════════════════════════════════════
+// Incognito
+[incognitoHeaderBtn, incognitoSidebarBtn].forEach(btn => {
+  if (btn) btn.addEventListener("click", toggleIncognito);
+});
+
+// Search
+if (searchInputEl) {
+  searchInputEl.addEventListener("input", () => {
+    const q = searchInputEl.value;
+    renderSessions(q);
+    if (searchClearBtn) searchClearBtn.classList.toggle("visible", q.length > 0);
+  });
+}
+if (searchClearBtn) {
+  searchClearBtn.addEventListener("click", () => {
+    if (searchInputEl) searchInputEl.value = "";
+    searchClearBtn.classList.remove("visible");
+    renderSessions();
+  });
+}
+
+// File attach
+if (attachBtn)  attachBtn.addEventListener("click", () => fileInputEl && fileInputEl.click());
+if (fileInputEl) fileInputEl.addEventListener("change", e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+if (fileRemoveBtn) fileRemoveBtn.addEventListener("click", clearAttachedFile);
+
+// Drag & drop
+if (inputAreaInner) {
+  inputAreaInner.addEventListener("dragover", e => { e.preventDefault(); inputAreaInner.classList.add("drag-over"); });
+  inputAreaInner.addEventListener("dragleave",  () => inputAreaInner.classList.remove("drag-over"));
+  inputAreaInner.addEventListener("drop", e => {
+    e.preventDefault();
+    inputAreaInner.classList.remove("drag-over");
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener("load", async () => {
   inputEl.focus();
-
-  // Lock input while discovering which model to use
-  inputEl.disabled  = true;
-  sendBtn.disabled  = true;
+  inputEl.disabled = true;
+  sendBtn.disabled = true;
   inputEl.placeholder = "Connecting to Gemini…";
 
-  if (botStatusText) botStatusText.textContent = "Connecting to Gemini API…";
+  // Render saved sessions
+  renderSessions();
+  updateIncognitoUI();
+  if (incognitoBanner) incognitoBanner.classList.remove("visible");
+  if (filePreviewArea) filePreviewArea.style.display = "none";
 
   const ok = await discoverModel();
 
   inputEl.disabled    = false;
   inputEl.placeholder = "Ask NovaMind anything…";
-  sendBtn.disabled    = !inputEl.value.trim();
+  sendBtn.disabled    = true;
 
-  if (ok) {
-    console.log(`🚀 NovaMind ready — model: ${GEMINI_MODEL}`);
-  }
+  if (ok) console.log(`🚀 NovaMind ready — model: ${GEMINI_MODEL}`);
 });
