@@ -141,7 +141,15 @@ let conversationHistory = [];
 let userLocationStr     = "";
 let activeSessionTokens = 0;
 let currentUserEmail    = null; // active logged-in email, or "guest"
-const DEMO_TOKEN_LIMIT  = 1500;
+
+function getNumKeys() {
+  if (typeof GEMINI_API_KEYS !== "undefined" && Array.isArray(GEMINI_API_KEYS)) {
+    return Math.max(1, GEMINI_API_KEYS.length);
+  }
+  return 1;
+}
+
+const DEMO_TOKEN_LIMIT  = getNumKeys() * 1500;
 let totalTokensUsed     = parseInt(localStorage.getItem("novamind_total_tokens_used") || "0", 10);
 
 // ── Session Storage ───────────────────────────────────────────────────────────
@@ -1530,12 +1538,21 @@ function updateQuotaUI() {
     } catch (e) {}
   }
   
+  const numKeys = getNumKeys();
+  const rpmLimit = numKeys * 15;
+  const rpdLimit = numKeys * 1500;
+  const rpdLimitStr = rpdLimit >= 1000 ? `${(rpdLimit / 1000).toFixed(0)}k` : rpdLimit.toString();
+
   if (rpmEl) {
-    rpmEl.textContent = `${requestTimestamps.length}/15`;
+    rpmEl.textContent = `${requestTimestamps.length}/${rpmLimit}`;
+    const rpmCard = rpmEl.closest(".quota-card");
+    if (rpmCard) rpmCard.title = `Requests per minute (Limit: ${rpmLimit})`;
   }
   
   if (rpdEl) {
-    rpdEl.textContent = `${dailyRequestCount}/1.5k`;
+    rpdEl.textContent = `${dailyRequestCount}/${rpdLimitStr}`;
+    const rpdCard = rpdEl.closest(".quota-card");
+    if (rpdCard) rpdCard.title = `Requests per day (Limit: ${rpdLimit})`;
   }
   
   if (tokEl) {
