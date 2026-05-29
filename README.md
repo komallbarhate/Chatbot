@@ -20,8 +20,8 @@
 * 🔐 **Authentication Overlay Lockout**: The interface is fully locked until users sign up, log in, or choose to enter via the **Guest Profile**.
 * 🗂️ **Isolated Session Histories**: Logged-in accounts have conversations securely stored and loaded under `novamind_sessions_${email}`, while guest users run isolated sessions under `novamind_sessions_guest`.
 * 🔑 **Zero-Config Key Entry for Users**: Users start chatting immediately without needing to configure or supply their own API keys.
-* 🔀 **API Key Load Balancing & Rotation**: Rotates requests randomly across multiple developer-configured Gemini keys in `config.js` to multiply rate limits (10 keys scale the limit to **150 RPM** and **15,000 RPD**).
-* 🛡️ **Demo Token Quota**: Imposes a strict, browser-persisted 1,500 token limit on demo chats to prevent key abuse, displayed dynamically in the sidebar.
+* 🔀 **API Key Load Balancing & Rotation**: Rotates requests randomly across multiple developer-configured Gemini keys in `config.js` to multiply rate limits (3 keys scale the limit to **45 RPM** and **4,500 RPD**).
+* 🛡️ **Demo Token Quota**: Imposes a strict, browser-persisted 4,500 token limit on demo chats to prevent key abuse, displayed dynamically in the sidebar.
 * 📧 **Gmail OTP Reset Simulation**: Support for forgotten passwords. Triggers a random 6-digit OTP code, popped up on-screen in a simulated Gmail notification window.
 * 🗣️ **Text-to-Speech (TTS)**: Built-in speaker buttons on bot messages, powered by the Web Speech API. Removes markdown markup for smooth, clean read-aloud playback.
 * 📋 **Code Copying**: Renders code fences with headers containing the language name and a click-to-copy utility.
@@ -80,13 +80,13 @@ novamind-chatbot/
 
 ---
 
-## 📡 API Limits (With 10 Rotating Keys)
+## 📡 API Limits (With 3 Rotating Keys)
 
-| Metric | Single Key | 10 Rotating Keys |
+| Metric | Single Key | 3 Rotating Keys |
 |---|---|---|
-| Requests Per Minute | 15 RPM | **150 RPM** |
-| Requests Per Day | 1,500 RPD | **15,000 RPD** |
-| Max Token Limit | 1,500 tokens / client | **1,500 tokens / client** |
+| Requests Per Minute | 15 RPM | **45 RPM** |
+| Requests Per Day | 1,500 RPD | **4,500 RPD** |
+| Max Token Limit | 1,500 tokens / client | **4,500 tokens / client** |
 
 ---
 
