@@ -520,10 +520,45 @@ async function discoverModel() {
     if (mlStatusText) mlStatusText.textContent = "Connecting…";
     if (mlDot) { mlDot.className = ""; mlDot.classList.add("ml-dot","ml-dot--loading"); }
 
-    const activeKey = getActiveAPIKey();
-    const res  = await fetch(`${BASE_URL}/models?key=${activeKey}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`);
+    let attempts = 0;
+    const maxAttempts = Math.min(5, getNumKeys());
+    let lastError = null;
+    const keysTried = new Set();
+    let data = null;
+
+    while (attempts < maxAttempts) {
+      let activeKey = "";
+      const availableKeys = (typeof GEMINI_API_KEYS !== "undefined" && Array.isArray(GEMINI_API_KEYS))
+        ? GEMINI_API_KEYS.filter(k => !keysTried.has(k))
+        : [];
+        
+      if (availableKeys.length > 0) {
+        activeKey = availableKeys[Math.floor(Math.random() * availableKeys.length)];
+      } else {
+        activeKey = typeof GEMINI_API_KEY !== "undefined" ? GEMINI_API_KEY : "";
+      }
+      
+      keysTried.add(activeKey);
+      attempts++;
+
+      try {
+        const res  = await fetch(`${BASE_URL}/models?key=${activeKey}`);
+        if (!res.ok) {
+          const errData = await res.json().catch(()=>({}));
+          throw new Error(errData?.error?.message || `HTTP ${res.status}`);
+        }
+        data = await res.json();
+        break; // Success!
+      } catch (err) {
+        lastError = err;
+        console.warn(`Model discovery failed with key attempt ${attempts}. Retrying... Error: ${err.message}`);
+        continue;
+      }
+    }
+
+    if (!data) {
+      throw lastError || new Error("Failed to connect with any available API key.");
+    }
 
     const PREFER = ["flash","pro"];
     const models = (data.models || [])
