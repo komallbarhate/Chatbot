@@ -645,8 +645,8 @@ async function callGemini(text, imagePart = null) {
         const err = await res.json().catch(()=>({}));
         const msg = err?.error?.message || `HTTP ${res.status}`;
         
-        if ((res.status === 429 || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("limit")) && attempts < maxAttempts) {
-          console.warn(`Key rate-limited. Retrying with a different key... (Attempt ${attempts}/${maxAttempts})`);
+        if ((res.status === 429 || res.status === 403 || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("limit") || msg.toLowerCase().includes("denied") || msg.toLowerCase().includes("access")) && attempts < maxAttempts) {
+          console.warn(`Key rate-limited or denied (${msg}). Retrying with a different key... (Attempt ${attempts}/${maxAttempts})`);
           continue;
         }
         throw new Error(msg);
@@ -662,7 +662,7 @@ async function callGemini(text, imagePart = null) {
       return { replyText, latencyMs, tokensMeta };
     } catch (err) {
       lastError = err;
-      if ((err.message.toLowerCase().includes("quota") || err.message.toLowerCase().includes("limit") || err.message.toLowerCase().includes("429")) && attempts < maxAttempts) {
+      if ((err.message.toLowerCase().includes("quota") || err.message.toLowerCase().includes("limit") || err.message.toLowerCase().includes("429") || err.message.toLowerCase().includes("denied") || err.message.toLowerCase().includes("access") || err.message.includes("403")) && attempts < maxAttempts) {
         console.warn(`Fetch error: ${err.message}. Retrying with another key...`);
         continue;
       }
