@@ -1602,24 +1602,30 @@ function updateQuotaUI() {
   const rpdLimit = numKeys * 1500;
   const rpdLimitStr = rpdLimit >= 1000 ? `${(rpdLimit / 1000).toFixed(0)}k` : rpdLimit.toString();
 
+  const isExhausted = totalTokensUsed >= DEMO_TOKEN_LIMIT;
+
   if (rpmEl) {
-    rpmEl.textContent = `${requestTimestamps.length}/${rpmLimit}`;
+    const rpmVal = isExhausted ? rpmLimit : Math.min(requestTimestamps.length, rpmLimit);
+    rpmEl.textContent = `${rpmVal}/${rpmLimit}`;
     const rpmCard = rpmEl.closest(".quota-card");
     if (rpmCard) rpmCard.title = `Requests per minute (Limit: ${rpmLimit})`;
   }
   
   if (rpdEl) {
-    rpdEl.textContent = `${dailyRequestCount}/${rpdLimitStr}`;
+    const rpdVal = isExhausted ? rpdLimitStr : Math.min(dailyRequestCount, rpdLimit);
+    rpdEl.textContent = `${rpdVal}/${rpdLimitStr}`;
     const rpdCard = rpdEl.closest(".quota-card");
     if (rpdCard) rpdCard.title = `Requests per day (Limit: ${rpdLimit})`;
   }
   
   if (tokEl) {
-    tokEl.textContent = formatTokenCount(activeSessionTokens);
+    const tokVal = isExhausted ? DEMO_TOKEN_LIMIT : activeSessionTokens;
+    tokEl.textContent = formatTokenCount(tokVal);
   }
 
   if (headerEl) {
-    headerEl.textContent = `Demo Quota: ${totalTokensUsed}/${DEMO_TOKEN_LIMIT} used`;
+    const displayTokens = Math.min(totalTokensUsed, DEMO_TOKEN_LIMIT);
+    headerEl.textContent = `Demo Quota: ${displayTokens}/${DEMO_TOKEN_LIMIT} used`;
   }
 }
 
