@@ -108,7 +108,6 @@ const sendBtn             = document.getElementById("send-btn");
 const clearBtn            = document.getElementById("clear-btn");
 const typingEl            = document.getElementById("typing-indicator");
 const themeBtn            = document.getElementById("theme-toggle");
-const nlpToggleBtn        = document.getElementById("nlp-view-toggle");
 const msgCountEl          = document.getElementById("msg-count");
 const sessionTimeEl       = document.getElementById("session-time");
 const mlStatusText        = document.getElementById("ml-status-text");
@@ -361,9 +360,6 @@ function replayMsg(msg) {
   }
 
   bw.appendChild(bubble);
-  if (isBot && msg.latencyMs !== undefined && !msg.error) {
-    bw.appendChild(buildGeminiPanel(msg.latencyMs, msg.tokensMeta || {}, GEMINI_MODEL || ""));
-  }
 
   const footer = document.createElement("div");
   footer.className = "message-footer";
@@ -796,7 +792,6 @@ function renderMessage(text, sender, { latencyMs, tokensMeta, error, fileInfo } 
 
   if (isBot) {
     if (error)                   bw.appendChild(buildErrorPanel(error));
-    else if (latencyMs !== undefined) bw.appendChild(buildGeminiPanel(latencyMs, tokensMeta || {}, GEMINI_MODEL));
   }
 
   const footer = document.createElement("div");
@@ -982,15 +977,6 @@ clearBtn.addEventListener("click", () => {
 themeBtn.addEventListener("click", () => {
   isDark = !isDark;
   document.body.classList.toggle("dark", isDark);
-});
-
-// Info panel toggle
-nlpToggleBtn.addEventListener("click", () => {
-  showInfoPanel = !showInfoPanel;
-  nlpToggleBtn.classList.toggle("active", showInfoPanel);
-  document.querySelectorAll(".ml-panel").forEach(p =>
-    p.classList.toggle("ml-panel--hidden", !showInfoPanel)
-  );
 });
 
 // Incognito
