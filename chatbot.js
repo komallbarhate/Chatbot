@@ -379,6 +379,15 @@ function replayMsg(msg) {
   ts.className = "timestamp"; ts.textContent = msg.timestamp || "";
   footer.appendChild(ts);
 
+  if (isBot && msg.text) {
+    const speakBtn = document.createElement("button");
+    speakBtn.className = "speak-btn";
+    speakBtn.title = "Read aloud";
+    speakBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+    speakBtn.addEventListener("click", () => toggleSpeak(msg.text, speakBtn));
+    footer.appendChild(speakBtn);
+  }
+
   bw.appendChild(footer);
 
   if (isBot) { wrapper.appendChild(avatar); wrapper.appendChild(bw); }
@@ -795,6 +804,15 @@ function renderMessage(text, sender, { latencyMs, tokensMeta, error, fileInfo } 
   const ts = document.createElement("span");
   ts.className = "timestamp"; ts.textContent = getTime();
   footer.appendChild(ts);
+
+  if (isBot && !error && text) {
+    const speakBtn = document.createElement("button");
+    speakBtn.className = "speak-btn";
+    speakBtn.title = "Read aloud";
+    speakBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+    speakBtn.addEventListener("click", () => toggleSpeak(text, speakBtn));
+    footer.appendChild(speakBtn);
+  }
 
   bw.appendChild(footer);
 
