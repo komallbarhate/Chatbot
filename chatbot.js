@@ -148,7 +148,18 @@ function getNumKeys() {
   return 1;
 }
 
-const DEMO_TOKEN_LIMIT  = getNumKeys() * 1500;
+const DEMO_TOKEN_LIMIT  = getNumKeys() * 10000000;
+
+// Auto-reset total token counter daily so users are never permanently locked out
+(function() {
+  const todayStr = new Date().toDateString();
+  const tokenResetDate = localStorage.getItem("novamind_token_reset_date");
+  if (tokenResetDate !== todayStr) {
+    localStorage.setItem("novamind_token_reset_date", todayStr);
+    localStorage.removeItem("novamind_total_tokens_used");
+  }
+})();
+
 let totalTokensUsed     = parseInt(localStorage.getItem("novamind_total_tokens_used") || "0", 10);
 
 // ── Session Storage ───────────────────────────────────────────────────────────
