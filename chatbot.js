@@ -621,9 +621,18 @@ async function callGemini(text, imagePart = null) {
   };
 
   let attempts = 0;
-  const maxAttempts = Math.min(5, getNumKeys());
+  const maxAttempts = Math.max(3, Math.min(6, getNumKeys() + 2));
   let lastError = null;
   const keysTried = new Set();
+
+  const isRetryableMsg = (msg) => {
+    const m = msg.toLowerCase();
+    return m.includes("quota") || m.includes("limit") || m.includes("denied")
+        || m.includes("access") || m.includes("429") || m.includes("403")
+        || m.includes("overload") || m.includes("unavailable")
+        || m.includes("high demand") || m.includes("try again")
+        || m.includes("503") || m.includes("resource_exhausted");
+  };
 
   while (attempts < maxAttempts) {
     let activeKey = "";
@@ -634,7 +643,11 @@ async function callGemini(text, imagePart = null) {
     if (availableKeys.length > 0) {
       activeKey = availableKeys[Math.floor(Math.random() * availableKeys.length)];
     } else {
-      activeKey = typeof GEMINI_API_KEY !== "undefined" ? GEMINI_API_KEY : "";
+      // All keys tried — reset so we can retry the same keys after a delay
+      keysTried.clear();
+      activeKey = (typeof GEMINI_API_KEYS !== "undefined" && Array.isArray(GEMINI_API_KEYS) && GEMINI_API_KEYS.length > 0)
+        ? GEMINI_API_KEYS[Math.floor(Math.random() * GEMINI_API_KEYS.length)]
+        : (typeof GEMINI_API_KEY !== "undefined" ? GEMINI_API_KEY : "");
     }
     
     keysTried.add(activeKey);
@@ -652,8 +665,12 @@ async function callGemini(text, imagePart = null) {
         const err = await res.json().catch(()=>({}));
         const msg = err?.error?.message || `HTTP ${res.status}`;
         
-        if ((res.status === 429 || res.status === 403 || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("limit") || msg.toLowerCase().includes("denied") || msg.toLowerCase().includes("access")) && attempts < maxAttempts) {
-          console.warn(`Key rate-limited or denied (${msg}). Retrying with a different key... (Attempt ${attempts}/${maxAttempts})`);
+        if (attempts < maxAttempts && (res.status === 429 || res.status === 403 || res.status === 503 || isRetryableMsg(msg))) {
+          console.warn(`API error (${res.status}: ${msg}). Retrying... (Attempt ${attempts}/${maxAttempts})`);
+          // Wait 1s before retrying on overload/503
+          if (res.status === 503 || msg.toLowerCase().includes("high demand") || msg.toLowerCase().includes("overload")) {
+            await new Promise(r => setTimeout(r, 1000));
+          }
           continue;
         }
         throw new Error(msg);
@@ -669,15 +686,18 @@ async function callGemini(text, imagePart = null) {
       return { replyText, latencyMs, tokensMeta };
     } catch (err) {
       lastError = err;
-      if ((err.message.toLowerCase().includes("quota") || err.message.toLowerCase().includes("limit") || err.message.toLowerCase().includes("429") || err.message.toLowerCase().includes("denied") || err.message.toLowerCase().includes("access") || err.message.includes("403")) && attempts < maxAttempts) {
+      if (attempts < maxAttempts && isRetryableMsg(err.message)) {
         console.warn(`Fetch error: ${err.message}. Retrying with another key...`);
+        if (isRetryableMsg(err.message) && (err.message.includes("503") || err.message.toLowerCase().includes("demand"))) {
+          await new Promise(r => setTimeout(r, 1000));
+        }
         continue;
       }
       throw err;
     }
   }
   
-  throw lastError || new Error("Failed to reach Gemini API after multiple key attempts.");
+  throw lastError || new Error("Failed to reach Gemini API after multiple attempts.");
 }
 
 // ── Markdown ──────────────────────────────────────────────────────────────────
