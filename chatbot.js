@@ -131,7 +131,7 @@ const inputAreaInner      = document.querySelector(".input-area-inner");
 let messageCount        = 0;
 let sessionStart        = Date.now();
 let isDark              = false;
-let showInfoPanel       = true;
+// (info panel removed)
 let isWaiting           = false;
 let isIncognito         = false;
 let attachedFile        = null;   // { name, type, mimeType, data, previewSrc }
@@ -726,39 +726,12 @@ function updateModelLabel() {
   if (mlStatusText)  mlStatusText.textContent  = "Ready";
 }
 
-// ── Gemini Info Panel ─────────────────────────────────────────────────────────
-function buildGeminiPanel(latencyMs, tokensMeta, model) {
-  const panel = document.createElement("div");
-  panel.className = "ml-panel" + (showInfoPanel ? "" : " ml-panel--hidden");
-
-  const pt = tokensMeta.promptTokenCount     ?? "—";
-  const rt = tokensMeta.candidatesTokenCount ?? "—";
-  const tt = tokensMeta.totalTokenCount      ?? "—";
-
-  panel.innerHTML = `
-    <div class="ml-pipeline-row">
-      <span class="ml-arch-chip">Input</span>
-      <span class="ml-arch-arrow">→</span>
-      <span class="ml-arch-chip">Gemini API</span>
-      <span class="ml-arch-arrow">→</span>
-      <span class="ml-arch-chip">Transformer</span>
-      <span class="ml-arch-arrow">→</span>
-      <span class="ml-arch-chip">Response</span>
-    </div>
-    <div class="ml-stats-row">
-      <div class="ml-stat"><span class="ml-stat-val">${pt}</span><span class="ml-stat-lbl">Input tok</span></div>
-      <div class="ml-stat"><span class="ml-stat-val">${rt}</span><span class="ml-stat-lbl">Output tok</span></div>
-      <div class="ml-stat"><span class="ml-stat-val">${tt}</span><span class="ml-stat-lbl">Total tok</span></div>
-      <div class="ml-stat"><span class="ml-stat-val">${latencyMs}<small style="font-size:.55rem;font-weight:500">ms</small></span><span class="ml-stat-lbl">Latency</span></div>
-    </div>`;
-  return panel;
-}
+// ── Error Panel ───────────────────────────────────────────────────────────────
 
 function buildErrorPanel(msg) {
   const p = document.createElement("div");
-  p.className = "ml-panel";
-  p.style.borderColor = "rgba(239,68,68,0.28)";
-  p.innerHTML = `<p class="ml-note" style="color:#f87171">⚠️ ${msg}</p>`;
+  p.style.cssText = "margin-top:6px;padding:8px 12px;border-radius:8px;border:1px solid rgba(239,68,68,0.28);font-size:0.75rem;color:#f87171;";
+  p.innerHTML = `⚠️ ${msg}`;
   return p;
 }
 
@@ -1135,8 +1108,6 @@ function getChatTranscript() {
       const bubble = msg.querySelector(".bot-bubble");
       if (bubble) {
         const clone = bubble.cloneNode(true);
-        const panel = clone.querySelector(".ml-panel");
-        if (panel) panel.remove();
         text = clone.innerText;
       }
     } else {
